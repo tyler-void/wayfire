@@ -66,3 +66,7 @@ build/**
 
 # End of https://www.toptal.com/developers/gitignore/api/c++,meson,ninja,linux
 .aider*
+
+### Python (docs/ipc-scripts helpers) ###
+__pycache__/
+*.pyc
