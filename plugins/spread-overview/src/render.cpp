@@ -63,6 +63,7 @@ void spread_overview_t::build_spread()
 
     auto result = layout(inputs, ivec2{grid.width, grid.height},
         dimf{(double)og.width, (double)og.height}, current_layout_options());
+    current_layout = result; // kept for the drop hit-test (Principle I)
 
     for (auto& vo : result.views)
     {
@@ -170,7 +171,17 @@ void spread_overview_t::clear_spread()
     thumb_rects.clear();
     saved_alpha.clear();
     session_views.clear();
+    current_layout = layout_result{};
     output->render->damage_whole();
+}
+
+// Stay-open rebuild after a relocate (FR-010): tear the spread down and rebuild it, so
+// the moved view lands in its new workspace cluster. State stays ACTIVE (grab kept).
+// Animation of the moved thumbnail is deferred to T027.
+void spread_overview_t::reflow()
+{
+    clear_spread();
+    build_spread();
 }
 } // namespace spread
 } // namespace wf

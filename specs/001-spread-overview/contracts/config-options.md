@@ -15,7 +15,6 @@ User-facing contract validated by wf-config and shown in WCM. Read via
 | `border_size` | int (px) | `2` | Stroke width of the border around each **workspace region** (the separating grid). | — |
 | `border_color` | color | `0.9 0.9 0.9 0.8` | Workspace border color (light, reads against the dim background). | — |
 | `show_ws_labels` | bool | `true` | Draw the workspace label on each cluster. | FR-004 |
-| `close_on_bg_click` | bool | `true` | Clicking empty background closes the overview. | FR-011 |
 | `include_minimized` | bool | `false` | Include minimized windows. **STUBBED in v1** — accepted but no effect (see note). | R13 |
 
 > **`include_minimized` is stubbed in v1** (R13, known-open): `layout()` needs a `natural_size` per

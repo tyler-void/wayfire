@@ -67,11 +67,6 @@
 				<_long>Color of the grid border around each workspace region. Opaque by default so coincident gridlines at cluster_gap=0 do not compound alpha.</_long>
 				<default>0.9 0.9 0.9 1.0</default>
 			</option>
-			<option name="close_on_bg_click" type="bool">
-				<_short>Close on background click</_short>
-				<_long>Click empty area to exit the overview.</_long>
-				<default>true</default>
-			</option>
 		</group>
 	</plugin>
 </wayfire>

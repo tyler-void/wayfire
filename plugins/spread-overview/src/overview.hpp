@@ -86,7 +86,6 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<int> opt_spacing{"spread-overview/spacing"};
     wf::option_wrapper_t<int> opt_cluster_gap{"spread-overview/cluster_gap"};
     wf::option_wrapper_t<bool> opt_show_labels{"spread-overview/show_ws_labels"};
-    wf::option_wrapper_t<bool> opt_close_on_bg{"spread-overview/close_on_bg_click"};
     wf::option_wrapper_t<int> opt_border_size{"spread-overview/border_size"};
     wf::option_wrapper_t<wf::color_t> opt_border_color{"spread-overview/border_color"};
 
@@ -94,6 +93,10 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // output OVERLAY layer, both torn down the same way in clear_spread().
     std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
     std::shared_ptr<border_node_t> border_node;
+
+    // The layout of the current spread — kept so a drop can hit_test_cluster() against
+    // the exact regions that were rendered (Principle I).
+    layout_result current_layout;
 
     // Click vs drag (T017/T020/T024). press_view is the pressed/dragged thumbnail; the
     // threshold on movement is the ONLY thing separating a click (focus+close) from a
@@ -109,11 +112,22 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     layout_options current_layout_options();
     void build_spread();
     void clear_spread();
+    void reflow(); // stay-open rebuild after a relocate (FR-010)
 
-    // input.cpp — output-local hit-test against thumb_rects + drag end (sub-step A:
-    // snap back; sub-step B will resolve relocate-or-snap-back).
+    // move.cpp — the only view-relocation / workspace-switch contact (Principle II).
+    void relocate(wayfire_toplevel_view view, wf::point_t target_ws);
+    void switch_workspace(wf::point_t target_ws);
+
+    // input.cpp — output-local hit-test against thumb_rects + drag end (drop → relocate
+    // or snap-back).
     wayfire_toplevel_view thumb_at(wf::pointf_t local);
     void end_drag(wf::pointf_t release_local);
+
+    // Single source of truth for "which cell is the drag over": the dragged thumbnail's
+    // on-screen CENTER given the current cursor. Both the drop-target highlight and the
+    // drop resolution use this, so what lights up is what receives the window (Principle
+    // I) — critical for large/maximized thumbnails where the cursor is far from center.
+    wf::pointf_t dragged_thumb_center(wf::pointf_t cursor_local);
 };
 } // namespace spread
 } // namespace wf

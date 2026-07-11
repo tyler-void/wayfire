@@ -131,6 +131,16 @@ All decisions are grounded in `docs/API-MAP-verified.md` (master signatures), th
   before making the option functional. Until then the option is accepted by config but has no effect.
 - **Rationale**: don't ship a half-working toggle; record the data-source gap explicitly.
 
+## R15 — Raising the dragged thumbnail  [DESCOPED — won't-do]
+- **Decision**: do NOT raise the dragged thumbnail above the others during drag.
+- **Rationale**: the drop-center fix (drop + highlight both resolve from the dragged
+  thumbnail's center, not the cursor) removed the *functional* need — a window lands on
+  exactly the highlighted cell even when the thumbnail is partly occluded. Raising is now
+  purely cosmetic. Exact z-order restore would require capturing/restoring the full wset
+  child-node list (no clean insert-at-index API; `get_views` order is not documented as
+  stacking), which is high restore-path risk (Principle V) for a small visual gain.
+- **Revisit** only if occlusion during drag proves annoying in real use.
+
 ## R14 — Inter-cluster space allocation  [DECIDED]
 - **Decision**: **Fixed-equal cluster regions on the workspace grid.** The working area (output minus
   `outer_margin`) is divided into a `grid.width × grid.height` matrix of equal cells separated by

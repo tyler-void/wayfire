@@ -69,10 +69,10 @@ and persists.
 
 **Independent Test**: `quickstart.md` scenario 3 (drag from ws1 to ws4, verify persisted).
 
-- [x] T020 [US2] Self-managed drag in `input.cpp` (ADR-001, build step 4) — ✅ compiled: press records view+origin; motion ≥ `drag_threshold` → DRAGGING; each motion sets the thumbnail transformer translation = `drag_orig + (cursor − press)` (grabbed point stays under cursor); release snaps back to layout position (sub-step A). Principle VI: mid-drag unmap → clean reset. **No raising yet** (z-order restore — deferred; dragged thumbnail may render under overlaps). Live-pending restart
-- [ ] T021 [US2] **Ordinary relocate (happy path)**: on release call `layout::hit_test_cluster()` → target ws; if `target ≠ source`, `plugins/spread-overview/src/move.cpp` calls `wset()->move_to_workspace(view, target_ws)`. Verify a **non-fullscreen** window persists on the target after the overview closes (build step 5, R4). Fullscreen is explicitly out of scope here → T022
-- [ ] T022 [US2] **Fullscreen relocate (separate edge checkpoint)** in `plugins/spread-overview/src/move.cpp`: for a fullscreen view, after the move re-issue `fullscreen_request(view, output, true, target_ws)`; handle the move/fullscreen ordering so the view lands fullscreen on the **correct** target ws. Verify fullscreen-relocate **independently** of T021 (R5)
-- [ ] T023 [US2] Highlight the cluster region under the cursor as the drop target during DRAGGING in `plugins/spread-overview/src/render.cpp` (FR-007)
+- [x] T020 [US2] Self-managed drag in `input.cpp` (ADR-001, build step 4) — ✅ compiled: press records view+origin; motion ≥ `drag_threshold` → DRAGGING; each motion sets the thumbnail transformer translation = `drag_orig + (cursor − press)` (grabbed point stays under cursor); release snaps back to layout position (sub-step A). Principle VI: mid-drag unmap → clean reset. **Checkpoint 5 (raising the dragged thumbnail): DESCOPED (won't-do)** — the drop-center fix removed the functional need (drops land correctly even when the thumbnail is partly occluded), so raising is purely cosmetic; exact z-order restore would require capturing/restoring the full wset child-node list (no clean insert-at-index API), a high restore-path risk for a small visual gain. Revisit only if occlusion during drag proves annoying in use.
+- [x] T021 [US2] **Ordinary relocate** — ✅ compiled: `end_drag` → `hit_test_cluster` → target ws; source = `get_view_main_workspace(view)`; if `target ≠ source`, `move.cpp` → `move_to_workspace`. **Drop-fix (Principle I)**: both highlight AND drop resolve from `dragged_thumb_center()` (thumbnail center = layout center + drag delta), *not* the cursor — so a maximized window drops on exactly the highlighted cell (was: cursor far from thumbnail center → wrong cell). Live-verify persists after close
+- [x] T022 [US2] **Fullscreen relocate (separate checkpoint)** — ✅ compiled: `move.cpp::relocate` captures `pending_fullscreen()` before the move, then after `move_to_workspace` re-issues `fullscreen_request(view, output, true, target_ws)` so a fullscreen window re-fullscreens on the **target** ws. A distinct step, not folded into the ordinary path (R5). Live-verify independently
+- [x] T023 [US2] Drop-target highlight — ✅ compiled: during DRAGGING, `hit_test_cluster` → cluster index → `border_node->set_highlight(idx)` (the dormant hook, now live); cleared on release. Only re-renders on cluster change (cheap). (FR-007)
 - [x] T024 [US2] Click-vs-drag disambiguation (FR-005/FR-006) — ✅ compiled: a `dragging` flag, set once motion crosses `drag_threshold`, is the sole separator. Press+release under threshold → click path (focus/bg, unchanged). Once `dragging`, release takes the drag path (never focuses, never closes). A gesture is never both
 
 **Checkpoint**: US1 + US2 both work independently — the headline drag-to-workspace is live.
@@ -87,8 +87,8 @@ one pass.
 **Independent Test**: `quickstart.md` scenario 4 (move A, overview stays open + A under new cluster,
 move B, both persist).
 
-- [ ] T025 [US3] On a successful relocate, transition `DRAGGING → ACTIVE` (stay open), re-run `layout()`, and animate the moved thumbnail into its new cluster in `plugins/spread-overview/src/overview.cpp` (FR-010, clarified 2026-07-11)
-- [ ] T026 [US3] Verify reflow stability across repeated relocations in one session (no residual transform, no stale cluster membership) in `plugins/spread-overview/src/overview.cpp`
+- [x] T025 [US3] Stay-open reflow — ✅ compiled: after a successful relocate, `reflow()` (`clear_spread` + `build_spread`) rebuilds the spread with the grab kept (DRAGGING→ACTIVE); the moved view lands in its new cluster (`get_view_main_workspace` now returns the new ws). Animating the move is deferred to T027. (FR-010)
+- [x] T026 [US3] Multi-move falls out of the same reflow path used twice — no separate machinery. Live-verify: move a second window in one session after the first reflow (no residual transform, no stale cluster membership)
 
 **Checkpoint**: all three stories independently functional.
 
@@ -100,7 +100,7 @@ move B, both persist).
 - [ ] T028 [P] **[Principle VI]** View-lifetime safety in `plugins/spread-overview/src/overview.cpp`: on a mid-session view unmap, remove its `ThumbnailRecord` and reflow; if it was the drag subject, end the drag as a snap-back — no crash, no ghost (FR-013, SC-007)
 - [ ] T029 [P] Edge cases in `plugins/spread-overview/src/{overview,render}.cpp`: empty-workspace cluster stays a valid drop target; single-window session; surface the `over_dense` flag in the UI (data-model)
 - [ ] T030 [P] **[Known-Open include_minimized]** Keep `include_minimized` parsed-but-no-op and document it as stubbed in `metadata/spread-overview.xml` (long description) until the `natural_size` source is resolved (research.md R13)
-- [ ] T031 Final exit-path pass in `plugins/spread-overview/src/input.cpp`: `close_on_bg_click`, Esc, and re-trigger all fully restore state (FR-011)
+- [x] T031 Exit paths (`input.cpp`) — ✅ compiled: **empty-cell click → `hit_test_cluster` → `request_workspace(target)` + close** (expo behavior; replaces the old `close_on_bg_click` "just close" — option removed). Click outside all cells → close, no switch. Esc + re-trigger close **without** switching. Gated by the click-vs-drag threshold, so a drag that starts on empty space never switches. Live-verify restore on each path (FR-011)
 - [ ] T032 Run the full `quickstart.md` validation (all 7 scenarios) on master and confirm SC-001…SC-008 (fullscreen scenario exercises T022; alpha uses T015; fullscreen-enum uses T017); record results
 - [ ] T033 [P] Update `docs/` (plugin README / notes) if the implementation surfaced anything worth recording
 
