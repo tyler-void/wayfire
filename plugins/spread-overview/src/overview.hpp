@@ -20,6 +20,7 @@
 #include <map>
 
 #include "layout.hpp"
+#include "overlay.hpp"
 
 namespace wf
 {
@@ -86,9 +87,13 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<int> opt_cluster_gap{"spread-overview/cluster_gap"};
     wf::option_wrapper_t<bool> opt_show_labels{"spread-overview/show_ws_labels"};
     wf::option_wrapper_t<bool> opt_close_on_bg{"spread-overview/close_on_bg_click"};
+    wf::option_wrapper_t<int> opt_border_size{"spread-overview/border_size"};
+    wf::option_wrapper_t<wf::color_t> opt_border_color{"spread-overview/border_color"};
 
-    // Per-cluster workspace labels (T016), in the output OVERLAY layer.
+    // Per-cluster workspace labels (T016) + the thumbnail border overlay, both in the
+    // output OVERLAY layer, both torn down the same way in clear_spread().
     std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
+    std::shared_ptr<border_node_t> border_node;
 
     // Click discrimination (T017; structured so the T020 drag-threshold split is additive).
     bool pressed = false;

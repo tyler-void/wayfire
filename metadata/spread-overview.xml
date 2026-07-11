@@ -33,9 +33,9 @@
 				<min>0</min>
 			</option>
 			<option name="cluster_gap" type="int">
-				<_short>Cluster gap (px)</_short>
-				<_long>Gap between per-workspace clusters.</_long>
-				<default>40</default>
+				<_short>Workspace gap (px)</_short>
+				<_long>Gap between workspace regions. 0 = edge-to-edge grid like expo.</_long>
+				<default>0</default>
 				<min>0</min>
 			</option>
 			<option name="show_ws_labels" type="bool">
@@ -55,6 +55,17 @@
 				<_short>Background dim</_short>
 				<_long>Color drawn behind the overview.</_long>
 				<default>0.1 0.1 0.1 1.0</default>
+			</option>
+			<option name="border_size" type="int">
+				<_short>Workspace border (px)</_short>
+				<_long>Stroke width of the border drawn around each workspace region (the grid separating the workspaces).</_long>
+				<default>2</default>
+				<min>1</min>
+			</option>
+			<option name="border_color" type="color">
+				<_short>Workspace border color</_short>
+				<_long>Color of the grid border around each workspace region. Opaque by default so coincident gridlines at cluster_gap=0 do not compound alpha.</_long>
+				<default>0.9 0.9 0.9 1.0</default>
 			</option>
 			<option name="close_on_bg_click" type="bool">
 				<_short>Close on background click</_short>

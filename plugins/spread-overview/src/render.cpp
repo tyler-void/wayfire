@@ -32,9 +32,10 @@ static std::shared_ptr<wf::scene::view_2d_transformer_t> own_alpha_node(wayfire_
 
 layout_options spread_overview_t::current_layout_options()
 {
-    layout_options o; // outer_margin / max_scale / min_scale keep sensible defaults
-    o.spacing     = (double)(int)opt_spacing;
-    o.cluster_gap = (double)(int)opt_cluster_gap;
+    layout_options o; // max_scale / min_scale keep sensible defaults
+    o.spacing      = (double)(int)opt_spacing;
+    o.cluster_gap  = (double)(int)opt_cluster_gap;
+    o.outer_margin = 0.0; // fill the whole output edge-to-edge (expo-style)
     return o;
 }
 
@@ -89,6 +90,22 @@ void spread_overview_t::build_spread()
         }
     }
 
+    // T016 workspace borders: one overlay node strokes each cluster region — the
+    // expo-style grid separating the workspaces. Same regions hit_test_cluster() uses
+    // for US2 drops (Principle I). US2 highlights one via border_node->set_highlight().
+    {
+        std::vector<rectf> cluster_rects;
+        for (auto& c : result.clusters)
+        {
+            cluster_rects.push_back(c.region);
+        }
+        const int bs = std::max(1, (int)opt_border_size);
+        border_node = std::make_shared<border_node_t>();
+        border_node->set_content(og, std::move(cluster_rects),
+            bs, (wf::color_t)opt_border_color, bs * 2, wf::color_t{0.3, 0.6, 1.0, 1.0});
+        wf::scene::add_front(output->node_for_layer(wf::scene::layer::OVERLAY), border_node);
+    }
+
     // T016: one workspace label per cluster (incl. empty — they are US2 drop targets),
     // in the output OVERLAY layer so it renders on top of the thumbnails.
     if (opt_show_labels)
@@ -121,6 +138,13 @@ void spread_overview_t::clear_spread()
         wf::scene::remove_child(label);
     }
     label_nodes.clear();
+
+    // Border overlay torn down identically to the labels (constraint: restore intact).
+    if (border_node)
+    {
+        wf::scene::remove_child(border_node);
+        border_node.reset();
+    }
 
     for (auto& [v, tr] : thumbnails)
     {

@@ -142,3 +142,47 @@ TEST_CASE("invariant 10: over-dense cluster still zero-overlap, flags over_dense
     }
     CHECK(r.clusters[0].over_dense);
 }
+
+TEST_CASE("edge-to-edge (cluster_gap=0, outer_margin=0): packing + hit-test stay meaningful")
+{
+    // spacing, cluster_gap=0, outer_margin=0, max_scale, min_scale
+    layout_options o{20.0, 0.0, 0.0, 1.0, 0.05};
+
+    std::vector<layout_input_view> views;
+    for (uint32_t i = 0; i < 12; i++)
+    {
+        views.push_back({i, {(int)(i % 3), (int)(i / 3) % 3}, {700, 500}});
+    }
+    auto r = layout(views, {3, 3}, {1920, 1080}, o);
+
+    // #9 density-invariance still holds at gap=0 (regions are a pure function of geometry)
+    auto empty = layout({}, {3, 3}, {1920, 1080}, o);
+    REQUIRE(r.clusters.size() == empty.clusters.size());
+    for (size_t i = 0; i < r.clusters.size(); i++)
+    {
+        CHECK(r.clusters[i].region.x == doctest::Approx(empty.clusters[i].region.x));
+        CHECK(r.clusters[i].region.w == doctest::Approx(empty.clusters[i].region.w));
+    }
+
+    // #3 zero overlap still holds with no gap between cells
+    for (size_t i = 0; i < r.views.size(); i++)
+    {
+        for (size_t j = i + 1; j < r.views.size(); j++)
+        {
+            CHECK_FALSE(overlaps(r.views[i].target_rect, r.views[j].target_rect));
+        }
+    }
+
+    // Clusters tile the whole output edge-to-edge -> every in-bounds point resolves to a
+    // cluster (never nullopt). #7 ("gap -> nullopt") is not vacuous, it just means
+    // "outside the output -> nullopt" when gap=0.
+    CHECK(hit_test_cluster(r, 5, 5).has_value());                 // top-left cell
+    CHECK(hit_test_cluster(r, 1915, 1075).has_value());           // bottom-right cell
+    CHECK(hit_test_cluster(r, 640, 360).has_value());             // interior
+    CHECK_FALSE(hit_test_cluster(r, 1920 + 10, 500).has_value()); // outside output -> nullopt
+
+    // A boundary point resolves to exactly one cluster (half-open [x, x+w)).
+    auto at_boundary = hit_test_cluster(r, 640, 360); // x=640 is the (0,0)|(1,0) edge
+    REQUIRE(at_boundary.has_value());
+    CHECK(at_boundary->x == 1); // belongs to the right cell, not the left
+}

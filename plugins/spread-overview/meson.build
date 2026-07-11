@@ -22,6 +22,7 @@ spread_overview_src = [
     'src/overview.cpp',
     'src/render.cpp',
     'src/input.cpp',
+    'src/overlay.cpp',
     'src/layout.cpp',
 ]
 
