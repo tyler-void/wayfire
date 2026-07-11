@@ -1,13 +1,15 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0 → 1.1.1
+Version change: 1.0.0 → 1.1.0 → 1.1.1 → 1.2.0
 Rationale: 1.1.0 MINOR — two principles added (VII, VIII) and Principle IV materially expanded to
 encode the three recon-surfaced constraints as first-class, inheritable rules. 1.1.1 PATCH —
 corrected the wlroots/wf-config dependency wording (they are meson **subprojects** selected via
 `use_system_wlroots=auto`, built as shared libs installed to `/usr/local/lib` and linked
 dynamically — "vendored" was imprecise; ldconfig presence is not system-linking) and struck the
-stale "master vs wlroots 0.19.3" framing. No change in obligations.
+stale "master vs wlroots 0.19.3" framing. 1.2.0 MINOR — Principle VIII gains a new obligation:
+out-of-tree plugins (e.g. `wayfire-plugins-extra`: `follow-focus`, `focus-change`) MUST be
+ABI-rebuilt against the master install and reinstalled to `/usr/local` on every master rebuild.
 
 Principles (8):
   I.    Pure, Testable Layout Core
@@ -145,6 +147,17 @@ The plugin is built **in-tree on Wayfire master (0.11-dev, wlroots 0.20.x)**, in
   **Do NOT purge it.** If master fails to start, `/usr/bin/wayfire` remains bootable.
 - Master MUST be confirmed to build **and boot** on the target machine before relying on it (done:
   headless smoke test on 2026-07-11, commit `8603d187`).
+- **Out-of-tree plugins MUST be ABI-rebuilt against master.** Any plugin not in the Wayfire tree —
+  notably `wayfire-plugins-extra` (the daily driver depends on `follow-focus` and `focus-change`) —
+  MUST be built against the master install (its `wayfire.pc` under `/usr/local/lib/pkgconfig`) and
+  installed to the `/usr/local` prefix, and MUST be **rebuilt every time master is rebuilt** (the ABI
+  date can bump on an API change). The Arch-packaged 0.10.x copies in `/usr/lib/wayfire` are
+  ABI-incompatible with master and are ignored by it. Verified 2026-07-11: `libfollow-focus.so` and
+  `libfocus-change.so` present in `/usr/local/lib/wayfire`. Reproducible build:
+  ```
+  PKG_CONFIG_PATH=/usr/local/lib/pkgconfig meson setup build --prefix=/usr/local
+  meson install -C build
+  ```
 
 Rationale: the ABI macro is the concrete gate that makes "in-tree on master" and "daily driver
 becomes master" the same decision; preserving the 0.10.1 fallback keeps that decision reversible.
@@ -197,4 +210,4 @@ lists, and reviews MUST verify compliance with the principles above.
   checkpoint. Complexity that violates a principle MUST be justified against a concrete need or
   removed.
 
-**Version**: 1.1.1 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-07-11
+**Version**: 1.2.0 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-07-11
