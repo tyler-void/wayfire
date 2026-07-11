@@ -1,0 +1,66 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="spread-overview">
+		<_short>Spread Overview</_short>
+		<_long>Spread every window across all workspaces and drag one to another workspace to relocate it.</_long>
+		<category>Desktop</category>
+		<group>
+			<_short>Behavior</_short>
+			<option name="toggle" type="activator">
+				<_short>Toggle overview</_short>
+				<_long>Open/close the all-workspace spread overview.</_long>
+				<default>&lt;super&gt; KEY_G</default>
+			</option>
+			<option name="duration" type="animation">
+				<_short>Animation duration</_short>
+				<_long>Entry/exit and reflow animation length.</_long>
+				<default>300ms</default>
+				<min>0</min>
+			</option>
+			<option name="drag_threshold" type="int">
+				<_short>Drag threshold (px)</_short>
+				<_long>Pointer movement past which a press becomes a drag rather than a click.</_long>
+				<default>8</default>
+				<min>1</min>
+			</option>
+		</group>
+		<group>
+			<_short>Layout</_short>
+			<option name="spacing" type="int">
+				<_short>Thumbnail spacing (px)</_short>
+				<_long>Gap between thumbnails within a workspace cluster.</_long>
+				<default>20</default>
+				<min>0</min>
+			</option>
+			<option name="cluster_gap" type="int">
+				<_short>Cluster gap (px)</_short>
+				<_long>Gap between per-workspace clusters.</_long>
+				<default>40</default>
+				<min>0</min>
+			</option>
+			<option name="show_ws_labels" type="bool">
+				<_short>Show workspace labels</_short>
+				<_long>Draw the workspace number on each cluster.</_long>
+				<default>true</default>
+			</option>
+			<option name="include_minimized" type="bool">
+				<_short>Include minimized windows (STUBBED)</_short>
+				<_long>Not yet functional in v1: minimized views have no displayed geometry, so their natural size for layout is unresolved. Parsed but has no effect until specified (see research.md R13).</_long>
+				<default>false</default>
+			</option>
+		</group>
+		<group>
+			<_short>Appearance</_short>
+			<option name="background" type="color">
+				<_short>Background dim</_short>
+				<_long>Color drawn behind the overview.</_long>
+				<default>0.1 0.1 0.1 1.0</default>
+			</option>
+			<option name="close_on_bg_click" type="bool">
+				<_short>Close on background click</_short>
+				<_long>Click empty area to exit the overview.</_long>
+				<default>true</default>
+			</option>
+		</group>
+	</plugin>
+</wayfire>

@@ -66,6 +66,7 @@ plugins = [
   'tile',
   'wm-actions',
   'scale',
+  'spread-overview',
   'single_plugins',
   'ipc-rules',
 ]
