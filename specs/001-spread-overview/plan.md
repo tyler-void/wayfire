@@ -69,8 +69,8 @@ acceptance scenario / principle is claimed done.
 
 | ID | Open question | Resolve at | Risk if wrong | Fallback |
 |---|---|---|---|---|
-| R9 | Does `get_views(WSET_MAPPED_ONLY)` return fullscreen / direct-scanout clients, and can they be thumbnailed? | Build step 2 (static spread) | A fullscreen client is missing from the spread (violates FR-002) | Force composition while the overview is active |
-| R10 | Does `view_2d_transformer_t` alpha **replace** or **multiply** the view's own alpha? Determines whether "force thumbnails opaque" works and whether Principle V's alpha-restore is real. | Build step 2 (render) | Thumbnails render dimmed (0.85) under the inactive-alpha daemon; restore path wrong | Capture + set the view's *own* alpha for the session and restore it |
+| R9 | Does `get_views(WSET_MAPPED_ONLY)` return fullscreen clients? | ✅ **RESOLVED by code** (research.md R9): **yes** — fullscreen is a toplevel state, not a layer (`scene.hpp:463`), and core iterates fullscreen views out of `get_views` (`workspace-impl.cpp:233`) | n/a — no fallback needed (live-confirm the thumbnail renders) |
+| R10 | Does `view_2d_transformer_t` alpha replace or multiply the view's own alpha? | ✅ **RESOLVED (T012)**: **multiplies** (`view-transform.hpp:350`) | naive transformer-alpha=1.0 leaves thumbnails dimmed under the daemon | **Adopted**: capture + set the view's *own* alpha for the session, restore on exit — implement in T015 |
 | include_minimized | Where does `natural_size` come from for a minimized view (no displayed geometry)? | Before enabling the option | A minimized view has no size → layout undefined | Option stays **stubbed** (parsed, no effect) until specified |
 
 R14 (inter-cluster space allocation) is **not** here — it is now *decided* (fixed-equal regions,

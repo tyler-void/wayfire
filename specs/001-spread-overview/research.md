@@ -70,28 +70,40 @@ All decisions are grounded in `docs/API-MAP-verified.md` (master signatures), th
   layout + labels possible (the mapping SPEC A feared scale lacked).
 - **Alternatives**: Recompute workspace from geometry — rejected (the API already provides it).
 
-## R9 — Fullscreen/direct-scanout enumeration  [OPEN — verify at build step 2]
-- **Working assumption**: `get_views(WSET_MAPPED_ONLY)` returns fullscreen toplevels (fullscreen is a
-  toplevel *state* on master, not a separate layer), so they appear in the spread.
-- **OPEN — not yet verified** against a running fullscreen / direct-scanout client. If such a client
-  is not returned by `get_views`, or cannot be thumbnailed via the scene transform, the fallback is
-  to force composition while the overview is active. **Must be confirmed at build step 2 before the
-  fullscreen acceptance scenario can be claimed done.**
-- **Alternatives**: enumerate extra layers — only if step-2 shows a gap.
+## R9 — Fullscreen/direct-scanout enumeration  [RESOLVED 2026-07-11 — by code evidence]
+- **Finding — `get_views(WSET_MAPPED_ONLY)` DOES include fullscreen toplevels.** Evidence:
+  1. Fullscreen is a **toplevel state, not a layer** — the scene `enum class layer`
+     (`scene.hpp:463`) has BACKGROUND/WORKSPACE/TOP/OVERLAY and **no `LAYER_FULLSCREEN`**.
+  2. Core itself iterates fullscreen views *out of* `get_views(WSET_MAPPED_ONLY)`:
+     `src/output/workspace-impl.cpp:233` does `for (view : get_views(WSET_MAPPED_ONLY)) { … if
+     (view->toplevel()->current().fullscreen) … }` — only meaningful because fullscreen views are
+     in the returned set.
+- **Conclusion**: no enumeration fallback needed. A fullscreen view is an ordinary workspace toplevel
+  and gets a thumbnail via the same `view_2d_transformer_t` path.
+- **Direct-scanout** is a render optimization Wayfire disables whenever composition is required — and
+  the overview forces composition (input grab + per-view transformers), so a scanned-out client is
+  composited normally while active. **To confirm live**: open a genuinely fullscreen client (video /
+  F11 browser), open the overview, verify its thumbnail appears and renders. If a live gap ever
+  shows, the fallback is `force_composition` while active — but the code says it won't be needed.
 
-## R10 — Alpha coexistence with the inactive-alpha daemon  [OPEN — decide at render step 2]
+## R10 — Alpha coexistence with the inactive-alpha daemon  [RESOLVED 2026-07-11 — inspect done (T012)]
 - **Requirement**: thumbnails render opaque during the session regardless of the daemon's per-view
   alpha; each view's pre-session alpha is captured at ACTIVATING and restored exactly at DEACTIVATING
   (FR-014, Principle V).
-- **OPEN — the mechanism is unverified**: it is not yet known whether our `view_2d_transformer_t`
-  alpha **replaces** or **multiplies** the view's own alpha. The daemon sets ~0.85 via
-  `set_view_alpha`; if the transformer alpha *multiplies*, setting it to 1.0 leaves a 0.85 view at
-  0.85 and the "force opaque" approach fails. Candidate resolutions: (a) capture + set the view's
-  *own* alpha to 1.0 for the session and restore it (same channel the daemon uses); (b) render the
-  thumbnail independent of the source view's alpha, if the transform path allows. **Decide at render
-  step 2 after inspecting the 2D transformer's alpha semantics in `src/api/wayfire/view-transform.hpp`
-  and its render node.**
-- Until resolved, Principle V's alpha-restore guarantee is *designed*, not *proven*.
+- **Finding (T012) — MULTIPLIES.** Three independent proofs:
+  1. Header: *"A multiplier for the view's opacity. … setting alpha=1.0 does not make it opaque."*
+     (`src/api/wayfire/view-transform.hpp:350`).
+  2. **Render node**: `src/view/view-3d.cpp:269` composites the (already-rendered) child texture at
+     `self->get_alpha()` — so each transformer in the stack multiplies the opacity below it.
+  3. **The daemon's own mechanism is a stacked transformer**: the `alpha` plugin sets a view's alpha
+     by adding a `view_2d_transformer_t` **named `"alpha"`** at z-order `TRANSFORMER_2D`
+     (`plugins/single_plugins/alpha.cpp:92-93`; `adjust_alpha` just does `tr->alpha = value`,
+     `:99-107`). Our spread transformer sits at `TRANSFORMER_2D + 1`, above it → they multiply
+     (0.85 × 1.0 = 0.85). Naive "force opaque via our transformer" fails.
+- **Decision — candidate (a).** The view's "own alpha" *is* the `"alpha"`-named transformer's value
+  (or 1.0 if absent). At ACTIVATING, for each view read that transformer; if present, capture its
+  value and set it to 1.0 (opaque). At DEACTIVATING/`cancel`, restore the captured value exactly, so
+  the daemon's dimming state is untouched. Implemented in T015 → flips plan row-V `PASS*` → `PASS`.
 
 ## R11 — Testing the pure layout
 - **Decision**: doctest unit tests for `layout.cpp` under `test/`, built with `-Dtests=true`

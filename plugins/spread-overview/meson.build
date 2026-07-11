@@ -20,6 +20,8 @@ spread_overview_deps = [
 spread_overview_src = [
     'src/plugin.cpp',
     'src/overview.cpp',
+    'src/render.cpp',
+    'src/input.cpp',
     'src/layout.cpp',
 ]
 

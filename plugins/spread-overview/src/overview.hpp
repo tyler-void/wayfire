@@ -10,9 +10,14 @@
 #include <wayfire/scene-input.hpp>
 #include <wayfire/option-wrapper.hpp>
 #include <wayfire/bindings.hpp>
+#include <wayfire/toplevel-view.hpp>
+#include <wayfire/view-transform.hpp>
 #include <wayfire/plugins/common/input-grab.hpp>
+#include <wayfire/plugins/common/simple-text-node.hpp>
 
 #include <memory>
+#include <vector>
+#include <map>
 
 #include "layout.hpp"
 
@@ -66,6 +71,37 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     bool toggle();
     bool activate();
     void deactivate();
+
+    // Per-session spread state (T011/T013). Views in enumeration order; the
+    // scale/translate transformer per view; the on-screen (output-local) rect per
+    // view for click hit-testing; the captured pre-session "own alpha" per view.
+    std::vector<wayfire_toplevel_view> session_views;
+    std::map<wayfire_toplevel_view, std::shared_ptr<wf::scene::view_2d_transformer_t>> thumbnails;
+    std::map<wayfire_toplevel_view, rectf> thumb_rects;
+    std::map<wayfire_toplevel_view, float> saved_alpha; // views that were dimmed pre-session (T015)
+
+    // Config (T019). duration/background are read as the animation (T025) + dim land.
+    wf::option_wrapper_t<int> opt_drag_threshold{"spread-overview/drag_threshold"};
+    wf::option_wrapper_t<int> opt_spacing{"spread-overview/spacing"};
+    wf::option_wrapper_t<int> opt_cluster_gap{"spread-overview/cluster_gap"};
+    wf::option_wrapper_t<bool> opt_show_labels{"spread-overview/show_ws_labels"};
+    wf::option_wrapper_t<bool> opt_close_on_bg{"spread-overview/close_on_bg_click"};
+
+    // Per-cluster workspace labels (T016), in the output OVERLAY layer.
+    std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
+
+    // Click discrimination (T017; structured so the T020 drag-threshold split is additive).
+    bool pressed = false;
+    wf::pointf_t press_pos;
+    wayfire_toplevel_view press_view;
+
+    // render.cpp (Principle II — scene/transform + alpha + label contact isolated here).
+    layout_options current_layout_options();
+    void build_spread();
+    void clear_spread();
+
+    // input.cpp — output-local hit-test against thumb_rects.
+    wayfire_toplevel_view thumb_at(wf::pointf_t local);
 };
 } // namespace spread
 } // namespace wf
