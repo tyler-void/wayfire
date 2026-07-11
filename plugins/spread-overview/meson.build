@@ -15,10 +15,11 @@ spread_overview_deps = [
     plugin_pch_dep,
 ]
 
-# Source list grows as tasks land. This turn: minimal skeleton + the pure layout core.
-# Later: overview.cpp, render.cpp, input.cpp, move.cpp (tasks T009+).
+# Source list grows as tasks land. Now: entry + session lifecycle + pure layout.
+# Later: render.cpp, input.cpp, move.cpp (tasks T011+).
 spread_overview_src = [
     'src/plugin.cpp',
+    'src/overview.cpp',
     'src/layout.cpp',
 ]
 

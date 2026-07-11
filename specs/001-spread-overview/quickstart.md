@@ -52,9 +52,9 @@ smoke tests) and watch the log.
 ## Run the pure-layout unit tests
 
 ```bash
-meson configure build -Dtests=true      # requires the `doctest` package
+meson configure build -Dtests=enabled   # feature option (enabled/disabled/auto), not =true; needs the `doctest` package
 ninja -C build
-meson test -C build spread-overview-layout   # or: ./build/test/... per the test wiring
+meson test -C build "Spread overview layout test"
 ```
 
 The layout tests assert the invariants in `contracts/layout.md` (cluster coverage, grouping, zero
