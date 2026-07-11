@@ -95,18 +95,25 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
     std::shared_ptr<border_node_t> border_node;
 
-    // Click discrimination (T017; structured so the T020 drag-threshold split is additive).
+    // Click vs drag (T017/T020/T024). press_view is the pressed/dragged thumbnail; the
+    // threshold on movement is the ONLY thing separating a click (focus+close) from a
+    // drag (follow + relocate). drag_orig_t* is the transformer translation at drag
+    // start, so snap-back / follow are computed as a delta from the layout position.
     bool pressed = false;
+    bool dragging = false;
     wf::pointf_t press_pos;
     wayfire_toplevel_view press_view;
+    double drag_orig_tx = 0.0, drag_orig_ty = 0.0;
 
     // render.cpp (Principle II — scene/transform + alpha + label contact isolated here).
     layout_options current_layout_options();
     void build_spread();
     void clear_spread();
 
-    // input.cpp — output-local hit-test against thumb_rects.
+    // input.cpp — output-local hit-test against thumb_rects + drag end (sub-step A:
+    // snap back; sub-step B will resolve relocate-or-snap-back).
     wayfire_toplevel_view thumb_at(wf::pointf_t local);
+    void end_drag(wf::pointf_t release_local);
 };
 } // namespace spread
 } // namespace wf

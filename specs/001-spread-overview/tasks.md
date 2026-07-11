@@ -69,11 +69,11 @@ and persists.
 
 **Independent Test**: `quickstart.md` scenario 3 (drag from ws1 to ws4, verify persisted).
 
-- [ ] T020 [US2] Self-managed drag in `plugins/spread-overview/src/input.cpp` (ADR-001, build step 4): button-down → `MAYBE_DRAG`; motion ≥ `drag_threshold` → `DRAGGING`; each motion updates the dragged thumbnail's `view_2d_transformer_t` translation to follow the cursor; snap back on same-cluster/gap release
+- [x] T020 [US2] Self-managed drag in `input.cpp` (ADR-001, build step 4) — ✅ compiled: press records view+origin; motion ≥ `drag_threshold` → DRAGGING; each motion sets the thumbnail transformer translation = `drag_orig + (cursor − press)` (grabbed point stays under cursor); release snaps back to layout position (sub-step A). Principle VI: mid-drag unmap → clean reset. **No raising yet** (z-order restore — deferred; dragged thumbnail may render under overlaps). Live-pending restart
 - [ ] T021 [US2] **Ordinary relocate (happy path)**: on release call `layout::hit_test_cluster()` → target ws; if `target ≠ source`, `plugins/spread-overview/src/move.cpp` calls `wset()->move_to_workspace(view, target_ws)`. Verify a **non-fullscreen** window persists on the target after the overview closes (build step 5, R4). Fullscreen is explicitly out of scope here → T022
 - [ ] T022 [US2] **Fullscreen relocate (separate edge checkpoint)** in `plugins/spread-overview/src/move.cpp`: for a fullscreen view, after the move re-issue `fullscreen_request(view, output, true, target_ws)`; handle the move/fullscreen ordering so the view lands fullscreen on the **correct** target ws. Verify fullscreen-relocate **independently** of T021 (R5)
 - [ ] T023 [US2] Highlight the cluster region under the cursor as the drop target during DRAGGING in `plugins/spread-overview/src/render.cpp` (FR-007)
-- [ ] T024 [US2] Wire `drag_threshold` option and harden click-vs-drag disambiguation so a gesture is never both (FR-005/FR-006) in `plugins/spread-overview/src/input.cpp`
+- [x] T024 [US2] Click-vs-drag disambiguation (FR-005/FR-006) — ✅ compiled: a `dragging` flag, set once motion crosses `drag_threshold`, is the sole separator. Press+release under threshold → click path (focus/bg, unchanged). Once `dragging`, release takes the drag path (never focuses, never closes). A gesture is never both
 
 **Checkpoint**: US1 + US2 both work independently — the headline drag-to-workspace is live.
 
