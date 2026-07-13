@@ -54,10 +54,11 @@ bool spread_overview_t::activate()
         load_wallpaper();
     }
 
-    // ACTIVATING -> ACTIVE collapses for now (entry animation arrives in T027).
+    // ACTIVATING -> ACTIVE collapses for now (a distinct entry state can come with exit
+    // animation, A2). ENTRY animates the thumbnails in from their real positions.
     state = session_state::ACTIVE;
     grab->grab_input(wf::scene::layer::OVERLAY);
-    build_spread();
+    build_spread(spread_anim::ENTRY);
     LOGI("spread-overview: ACTIVE - input grabbed, ", session_views.size(), " views spread");
     return true;
 }

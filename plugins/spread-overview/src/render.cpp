@@ -39,7 +39,7 @@ layout_options spread_overview_t::current_layout_options()
     return o;
 }
 
-void spread_overview_t::build_spread()
+void spread_overview_t::build_spread(spread_anim anim)
 {
     auto wset = output->wset();
     auto all  = wset->get_views(wf::WSET_MAPPED_ONLY | wf::WSET_EXCLUDE_MINIMIZED);
@@ -89,12 +89,53 @@ void spread_overview_t::build_spread()
         // T013 geometry: scale+translate onto the slot. get_geometry() is in global
         // coords, so an off-workspace view's translation delta pulls it on-screen.
         auto vg = v->get_geometry();
-        const double s = vo.target_rect.w / std::max(1.0, (double)vg.width);
-        tr->scale_x = tr->scale_y = (float)s;
-        tr->translation_x = (float)((vo.target_rect.x + vo.target_rect.w / 2.0) -
-            (vg.x + vg.width / 2.0));
-        tr->translation_y = (float)((vo.target_rect.y + vo.target_rect.h / 2.0) -
-            (vg.y + vg.height / 2.0));
+        const double s  = vo.target_rect.w / std::max(1.0, (double)vg.width);
+        const double tx = (vo.target_rect.x + vo.target_rect.w / 2.0) - (vg.x + vg.width / 2.0);
+        const double ty = (vo.target_rect.y + vo.target_rect.h / 2.0) - (vg.y + vg.height / 2.0);
+
+        if (anim == spread_anim::NONE)
+        {
+            tr->scale_x = tr->scale_y = (float)s;
+            tr->translation_x = (float)tx;
+            tr->translation_y = (float)ty;
+        }
+        else
+        {
+            // Animated: choose the START transform for this mode, then glide to the slot over
+            // `duration`. Set the transformer to the START now so the first frame shows the
+            // start, not a flash of the final slot; animate_step ticks it to the slot.
+            double s0 = s, tx0 = tx, ty0 = ty;
+            if (anim == spread_anim::ENTRY)
+            {
+                // From the window's real position (scale 1, no translation): off-workspace
+                // windows enter from their grid direction (the loved directional slide-in).
+                s0 = 1.0; tx0 = 0.0; ty0 = 0.0;
+            }
+            else // REFLOW
+            {
+                // From where the thumbnail visually WAS (captured pre-relocate), re-expressed
+                // against the view's NEW geometry so the rendered rect starts unchanged and
+                // glides to the slot. No snapshot (unexpected) -> just appear at the slot.
+                auto pit = reflow_prev_rects.find(v);
+                if (pit != reflow_prev_rects.end())
+                {
+                    const auto& old = pit->second;
+                    s0  = old.w / std::max(1.0, (double)vg.width);
+                    tx0 = (old.x + old.w / 2.0) - (vg.x + vg.width / 2.0);
+                    ty0 = (old.y + old.h / 2.0) - (vg.y + vg.height / 2.0);
+                }
+            }
+
+            auto& a = anim_state.try_emplace(v, opt_duration).first->second;
+            a.scale_x.set(s0, s);
+            a.scale_y.set(s0, s);
+            a.translation_x.set(tx0, tx);
+            a.translation_y.set(ty0, ty);
+            a.start();
+            tr->scale_x = tr->scale_y = (float)s0;
+            tr->translation_x = (float)tx0;
+            tr->translation_y = (float)ty0;
+        }
 
         // T015: force opaque, capturing the daemon's dimming to restore on exit.
         if (auto a = own_alpha_node(v))
@@ -114,9 +155,10 @@ void spread_overview_t::build_spread()
             cluster_rects.push_back(c.region);
         }
         const int bs = std::max(1, (int)opt_border_size);
+        const int hs = std::max(1, (int)opt_highlight_size);
         border_node = std::make_shared<border_node_t>();
         border_node->set_content(og, std::move(cluster_rects),
-            bs, (wf::color_t)opt_border_color, bs * 2, wf::color_t{0.3, 0.6, 1.0, 1.0});
+            bs, (wf::color_t)opt_border_color, hs, (wf::color_t)opt_highlight_color);
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::OVERLAY), border_node);
     }
 
@@ -180,11 +222,32 @@ void spread_overview_t::build_spread()
         }
     }
 
+    // T027: if we set up transitions (entry or reflow), install the per-frame tick hook and
+    // kick a redraw so the clocks advance. animate_step removes the hook once they all settle.
+    if ((anim != spread_anim::NONE) && !anim_state.empty())
+    {
+        if (!anim_hook_active)
+        {
+            output->render->add_effect(&anim_hook, wf::OUTPUT_EFFECT_PRE);
+            anim_hook_active = true;
+        }
+        output->render->schedule_redraw();
+    }
+
     output->render->damage_whole();
 }
 
 void spread_overview_t::clear_spread()
 {
+    // Stop the animation tick and drop its per-view clocks before the transformers they drive
+    // are removed below (Principle V — no view state left touched, no dangling hook).
+    if (anim_hook_active)
+    {
+        output->render->rem_effect(&anim_hook);
+        anim_hook_active = false;
+    }
+    anim_state.clear();
+
     for (auto& label : label_nodes)
     {
         wf::scene::remove_child(label);
@@ -244,13 +307,106 @@ void spread_overview_t::clear_spread()
     output->render->damage_whole();
 }
 
-// Stay-open rebuild after a relocate (FR-010): tear the spread down and rebuild it, so
-// the moved view lands in its new workspace cluster. State stays ACTIVE (grab kept).
-// Animation of the moved thumbnail is deferred to T027.
+// T027 entry: per-frame tick. Read each clock's interpolated value into its transformer
+// (begin/end_transform_update so the scene damages the moved node), keep rendering while any
+// clock runs, and drop the hook once they all settle at their slot (end) values.
+void spread_overview_t::animate_step()
+{
+    bool any_running = false;
+    for (auto& [v, a] : anim_state)
+    {
+        auto it = thumbnails.find(v);
+        if (!v || !v->is_mapped() || (it == thumbnails.end()))
+        {
+            continue; // Principle VI: a view that vanished mid-animation is simply skipped
+        }
+
+        auto tr = it->second;
+        v->get_transformed_node()->begin_transform_update();
+        tr->scale_x = (float)(double)a.scale_x;
+        tr->scale_y = (float)(double)a.scale_y;
+        tr->translation_x = (float)(double)a.translation_x;
+        tr->translation_y = (float)(double)a.translation_y;
+        v->get_transformed_node()->end_transform_update();
+
+        if (a.running())
+        {
+            any_running = true;
+        }
+    }
+
+    if (any_running)
+    {
+        output->render->schedule_redraw();
+    }
+    else if (anim_hook_active)
+    {
+        output->render->rem_effect(&anim_hook);
+        anim_hook_active = false;
+    }
+}
+
+// Snap every thumbnail straight to its final slot (the transition END) and drop the hook.
+// Called on drag start so the drag-follow reads a stable translation and the per-frame tick
+// never fights the cursor (the entry animation and the drag are sequential, never concurrent).
+void spread_overview_t::finalize_entry_anim()
+{
+    if (!anim_hook_active)
+    {
+        return;
+    }
+
+    for (auto& [v, a] : anim_state)
+    {
+        auto it = thumbnails.find(v);
+        if (!v || !v->is_mapped() || (it == thumbnails.end()))
+        {
+            continue;
+        }
+
+        auto tr = it->second;
+        tr->scale_x = (float)a.scale_x.end;
+        tr->scale_y = (float)a.scale_y.end;
+        tr->translation_x = (float)a.translation_x.end;
+        tr->translation_y = (float)a.translation_y.end;
+    }
+
+    output->render->rem_effect(&anim_hook);
+    anim_hook_active = false;
+    output->render->damage_whole();
+}
+
+// Capture each thumbnail's current on-screen (output-local) rect, so a following REFLOW can
+// animate it from here to its new slot. Called in end_drag BEFORE relocate() moves the dragged
+// view's geometry. The transformer is a scale-about-center + translate, so the rendered rect is
+// center = view.center + translation, size = view.size * scale.
+void spread_overview_t::snapshot_thumb_screen_rects()
+{
+    reflow_prev_rects.clear();
+    for (auto& [v, tr] : thumbnails)
+    {
+        if (!v || !v->is_mapped())
+        {
+            continue;
+        }
+
+        auto vg = v->get_geometry();
+        const double w  = vg.width  * tr->scale_x;
+        const double h  = vg.height * tr->scale_y;
+        const double cx = (vg.x + vg.width  / 2.0) + tr->translation_x;
+        const double cy = (vg.y + vg.height / 2.0) + tr->translation_y;
+        reflow_prev_rects[v] = rectf{cx - w / 2.0, cy - h / 2.0, w, h};
+    }
+}
+
+// Stay-open rebuild after a relocate (FR-010): tear the spread down and rebuild it, so the
+// moved view lands in its new workspace cluster. State stays ACTIVE (grab kept). Rebuilt with
+// REFLOW so every thumbnail glides from its pre-relocate on-screen rect (snapshot above) to its
+// new slot — the moved window flies into its target cluster instead of popping (T027 A3).
 void spread_overview_t::reflow()
 {
     clear_spread();
-    build_spread();
+    build_spread(spread_anim::REFLOW);
 }
 } // namespace spread
 } // namespace wf

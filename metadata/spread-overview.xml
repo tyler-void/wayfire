@@ -40,8 +40,8 @@
 			</option>
 			<option name="show_ws_labels" type="bool">
 				<_short>Show workspace labels</_short>
-				<_long>Draw the workspace number on each cluster.</_long>
-				<default>true</default>
+				<_long>Draw the workspace number on each cluster. Off by default — the grid + dim veil already convey the workspaces.</_long>
+				<default>false</default>
 			</option>
 			<option name="include_minimized" type="bool">
 				<_short>Include minimized windows (STUBBED)</_short>
@@ -74,6 +74,17 @@
 				<_short>Workspace border color</_short>
 				<_long>Color of the grid border around each workspace region. Opaque by default so coincident gridlines at cluster_gap=0 do not compound alpha.</_long>
 				<default>0.9 0.9 0.9 1.0</default>
+			</option>
+			<option name="highlight_color" type="color">
+				<_short>Drop-target highlight color</_short>
+				<_long>Color of the border drawn around the workspace a dragged window will drop into. Shown only while dragging, on the cell under the dragged thumbnail's center.</_long>
+				<default>0.3 0.6 1.0 1.0</default>
+			</option>
+			<option name="highlight_size" type="int">
+				<_short>Drop-target highlight width (px)</_short>
+				<_long>Stroke width of the drop-target highlight border (drawn while dragging a window over a workspace).</_long>
+				<default>4</default>
+				<min>1</min>
 			</option>
 			<option name="wallpaper_path" type="string">
 				<_short>Per-cell wallpaper image (PNG)</_short>

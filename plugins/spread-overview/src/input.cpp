@@ -161,6 +161,11 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
             return;
         }
 
+        // If the entry animation is still running, snap every thumbnail to its final slot
+        // first, so drag_orig_t* below captures a stable translation and the per-frame tick
+        // never fights the drag-follow (T027 A1).
+        finalize_entry_anim();
+
         auto tr = thumbnails[press_view];
         drag_orig_tx = tr->translation_x;
         drag_orig_ty = tr->translation_y;
@@ -247,8 +252,11 @@ void spread_overview_t::end_drag(wf::pointf_t release_local)
     if (target && ((target->x != source.x) || (target->y != source.y)))
     {
         // Dropped over a different workspace -> relocate for real, then stay-open reflow
-        // so the moved thumbnail lands in its new cluster (FR-008/FR-010).
+        // so the moved thumbnail lands in its new cluster (FR-008/FR-010). Snapshot the
+        // thumbnails' on-screen rects FIRST (before relocate moves the dragged view's
+        // geometry) so the reflow can animate each one from where it is to its new slot.
         LOGI("spread-overview: drop -> relocate to ws (", target->x, ",", target->y, ")");
+        snapshot_thumb_screen_rects();
         relocate(press_view, wf::point_t{target->x, target->y});
         reflow();
     }

@@ -12,6 +12,8 @@
 #include <wayfire/bindings.hpp>
 #include <wayfire/toplevel-view.hpp>
 #include <wayfire/view-transform.hpp>
+#include <wayfire/render-manager.hpp>
+#include <wayfire/util/duration.hpp>
 #include <wayfire/plugins/common/input-grab.hpp>
 #include <wayfire/plugins/common/simple-text-node.hpp>
 
@@ -26,6 +28,19 @@ namespace wf
 {
 namespace spread
 {
+// Per-thumbnail animation clock (T027): a duration_t carrying four timed transitions for the
+// transformer's scale + translation. Mirrors scale's scale_animation_t. The transitions bind
+// to *this, so instances MUST live in a node-stable container (std::map) — never moved after
+// construction, or the self-bound clock pointers would dangle.
+class thumb_anim_t : public wf::animation::duration_t
+{
+  public:
+    using duration_t::duration_t;
+    wf::animation::timed_transition_t scale_x{*this};
+    wf::animation::timed_transition_t scale_y{*this};
+    wf::animation::timed_transition_t translation_x{*this};
+    wf::animation::timed_transition_t translation_y{*this};
+};
 // State machine (data-model.md). Only IDLE/ACTIVE are exercised this increment;
 // ACTIVATING/DRAGGING/DEACTIVATING become meaningful with animation + drag (T011+).
 enum class session_state
@@ -35,6 +50,18 @@ enum class session_state
     ACTIVE,
     DRAGGING,
     DEACTIVATING,
+};
+
+// How build_spread() places the thumbnails (T027):
+//   NONE   — snap straight to the slot (used by nothing now; kept for a possible instant path)
+//   ENTRY  — animate in from each window's real position (open); the loved directional slide-in
+//   REFLOW — animate from each thumbnail's PRE-reflow on-screen rect to its new slot (after a
+//            relocate), so the moved window glides into its target workspace instead of popping
+enum class spread_anim
+{
+    NONE,
+    ENTRY,
+    REFLOW,
 };
 
 class spread_overview_t : public wf::per_output_plugin_instance_t,
@@ -81,13 +108,16 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     std::map<wayfire_toplevel_view, rectf> thumb_rects;
     std::map<wayfire_toplevel_view, float> saved_alpha; // views that were dimmed pre-session (T015)
 
-    // Config (T019). duration/background are read as the animation (T025) + dim land.
+    // Config (T019). background is read by the dim veil; duration drives the animations (T027).
+    wf::option_wrapper_t<wf::animation_description_t> opt_duration{"spread-overview/duration"};
     wf::option_wrapper_t<int> opt_drag_threshold{"spread-overview/drag_threshold"};
     wf::option_wrapper_t<int> opt_spacing{"spread-overview/spacing"};
     wf::option_wrapper_t<int> opt_cluster_gap{"spread-overview/cluster_gap"};
     wf::option_wrapper_t<bool> opt_show_labels{"spread-overview/show_ws_labels"};
     wf::option_wrapper_t<int> opt_border_size{"spread-overview/border_size"};
     wf::option_wrapper_t<wf::color_t> opt_border_color{"spread-overview/border_color"};
+    wf::option_wrapper_t<wf::color_t> opt_highlight_color{"spread-overview/highlight_color"};
+    wf::option_wrapper_t<int> opt_highlight_size{"spread-overview/highlight_size"};
     wf::option_wrapper_t<wf::color_t> opt_background{"spread-overview/background"};
     wf::option_wrapper_t<double> opt_inactive_brightness{"spread-overview/inactive_brightness"};
     wf::option_wrapper_t<std::string> opt_wallpaper_path{"spread-overview/wallpaper_path"};
@@ -102,6 +132,19 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     std::shared_ptr<dim_node_t> dim_node;
     std::shared_ptr<wallpaper_node_t> wallpaper_node; // B2: per-cell wallpaper tile, backmost
     int current_ws_index = -1;
+
+    // Entry/exit/reflow animation (T027; A1 = entry). anim_state holds one clock+transitions
+    // per thumbnail; anim_hook ticks them into the transformers each frame while any is
+    // running (a per-frame OUTPUT_EFFECT_PRE effect, added on open, removed when animation
+    // settles or the spread is torn down). std::map for node stability (see thumb_anim_t).
+    std::map<wayfire_toplevel_view, thumb_anim_t> anim_state;
+    wf::effect_hook_t anim_hook = [this] () { animate_step(); };
+    bool anim_hook_active = false;
+
+    // Each thumbnail's on-screen (output-local) rect captured just BEFORE a relocate, so the
+    // REFLOW rebuild can animate every thumbnail from where it visually was to its new slot
+    // (the moved window glides to its target cluster; others slide as the layout reflows).
+    std::map<wayfire_toplevel_view, rectf> reflow_prev_rects;
 
     // Per-cell wallpaper (B1: load + upload + report ONLY; the per-cell blit is B2). The
     // ONLY image-file / texture-upload contact is wallpaper.cpp (Principle II). This is a
@@ -131,9 +174,17 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
 
     // render.cpp (Principle II — scene/transform + alpha + label contact isolated here).
     layout_options current_layout_options();
-    void build_spread();
+    void build_spread(spread_anim anim = spread_anim::NONE);
     void clear_spread();
-    void reflow(); // stay-open rebuild after a relocate (FR-010)
+    void reflow(); // stay-open rebuild after a relocate (FR-010) — animates via REFLOW
+
+    // Animation (T027). animate_step ticks the transitions into the transformers each frame;
+    // finalize_entry_anim snaps every thumbnail to its final slot and drops the hook (called on
+    // drag start so the drag-follow never fights the animation). snapshot_thumb_screen_rects
+    // captures each thumbnail's on-screen rect BEFORE a relocate, so reflow can animate from it.
+    void animate_step();
+    void finalize_entry_anim();
+    void snapshot_thumb_screen_rects();
 
     // move.cpp — the only view-relocation / workspace-switch contact (Principle II).
     void relocate(wayfire_toplevel_view view, wf::point_t target_ws);
