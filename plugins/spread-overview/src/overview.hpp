@@ -88,11 +88,32 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<bool> opt_show_labels{"spread-overview/show_ws_labels"};
     wf::option_wrapper_t<int> opt_border_size{"spread-overview/border_size"};
     wf::option_wrapper_t<wf::color_t> opt_border_color{"spread-overview/border_color"};
+    wf::option_wrapper_t<wf::color_t> opt_background{"spread-overview/background"};
+    wf::option_wrapper_t<double> opt_inactive_brightness{"spread-overview/inactive_brightness"};
+    wf::option_wrapper_t<std::string> opt_wallpaper_path{"spread-overview/wallpaper_path"};
 
     // Per-cluster workspace labels (T016) + the thumbnail border overlay, both in the
-    // output OVERLAY layer, both torn down the same way in clear_spread().
+    // output OVERLAY layer (above the thumbnails), both torn down the same way in
+    // clear_spread(). dim_node is the per-workspace veil, in the WORKSPACE layer at the
+    // back (BELOW the thumbnails). current_ws_index is the cluster of the current
+    // workspace — the veil's bright cell when not dragging (recomputed each build_spread).
     std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
     std::shared_ptr<border_node_t> border_node;
+    std::shared_ptr<dim_node_t> dim_node;
+    std::shared_ptr<wallpaper_node_t> wallpaper_node; // B2: per-cell wallpaper tile, backmost
+    int current_ws_index = -1;
+
+    // Per-cell wallpaper (B1: load + upload + report ONLY; the per-cell blit is B2). The
+    // ONLY image-file / texture-upload contact is wallpaper.cpp (Principle II). This is a
+    // plain file->texture upload (cairo -> owned_texture_t), NOT a live-scene capture — it
+    // deliberately sidesteps aux-buffer render passes / cross-GPU buffer handling. Loaded
+    // ONCE on first activate(). FAIL-SOFT: unset path / missing file / decode / upload
+    // failure leaves wallpaper_ok=false and the overview falls back to today's look (no
+    // per-cell wallpaper), NEVER a crash.
+    wf::owned_texture_t wallpaper_tex;
+    wf::dimensions_t wallpaper_size{0, 0};
+    bool wallpaper_load_attempted = false;
+    bool wallpaper_ok = false;
 
     // The layout of the current spread — kept so a drop can hit_test_cluster() against
     // the exact regions that were rendered (Principle I).
@@ -117,6 +138,18 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // move.cpp — the only view-relocation / workspace-switch contact (Principle II).
     void relocate(wayfire_toplevel_view view, wf::point_t target_ws);
     void switch_workspace(wf::point_t target_ws);
+
+    // Place a FLOATING view fully inside the target workspace cell — the discrete "drop =
+    // it's here now" guarantee (research decision). Preserves the window's in-cell offset,
+    // clamps so it fits entirely inside the cell, and centers it if it is larger than a
+    // workspace. Deliberately guard-free (unlike wset->move_to_workspace, which no-ops when
+    // the window already overlaps the target) so a straddling window can be dropped onto a
+    // workspace it partially overlaps.
+    void snap_into_workspace(wayfire_toplevel_view view, wf::point_t target_ws);
+
+    // wallpaper.cpp — the only image-file load + texture-upload contact (Principle II).
+    // B1: load once, report, draw nothing. B2 will add the per-cell blit.
+    void load_wallpaper();
 
     // input.cpp — output-local hit-test against thumb_rects + drag end (drop → relocate
     // or snap-back).

@@ -207,6 +207,14 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
         }
 
         border_node->set_highlight(hl);
+
+        // Brighten the drop-target cell as the drag moves over it (expo's focus cue follows
+        // the drag), reusing the SAME resolved cluster as the border highlight (Principle
+        // I). Off any cell -> keep the current workspace bright.
+        if (dim_node)
+        {
+            dim_node->set_active(hl >= 0 ? hl : current_ws_index);
+        }
     }
 }
 
@@ -215,6 +223,13 @@ void spread_overview_t::end_drag(wf::pointf_t release_local)
     if (border_node)
     {
         border_node->set_highlight(-1); // clear the drop-target highlight
+    }
+
+    // Restore the idle focus cue (current workspace bright). On a real relocate, reflow()
+    // rebuilds the veil anyway; on a snap-back this is what un-brightens the drop target.
+    if (dim_node)
+    {
+        dim_node->set_active(current_ws_index);
     }
 
     // Principle VI: the view vanished mid-drag -> nothing to move or snap back.

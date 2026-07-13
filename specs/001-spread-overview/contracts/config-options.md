@@ -11,7 +11,8 @@ User-facing contract validated by wf-config and shown in WCM. Read via
 | `spacing` | int (px) | `20` | Gap between thumbnails within a workspace cluster. | FR-003 |
 | `cluster_gap` | int (px) | `40` | Gap between workspace clusters. | FR-004 |
 | `drag_threshold` | int (px) | `8` | Movement past which a press becomes a drag, not a click. | FR-005/FR-006 |
-| `background` | color | `0.1 0.1 0.1 1.0` | Dim color drawn behind the overview. | — |
+| `background` | color | `0.0 0.0 0.0 1.0` | Per-workspace dim veil: tint (RGB) + full-strength opacity (A). Drawn **below** the thumbnails, so windows stay crisp while backdrops dim. | — |
+| `inactive_brightness` | double `0..1` | `0.7` | Brightness of inactive workspaces (active = current ws, or drop target while dragging). Veil alpha = `background.a * (1 - inactive_brightness)`. Mirrors expo. | — |
 | `border_size` | int (px) | `2` | Stroke width of the border around each **workspace region** (the separating grid). | — |
 | `border_color` | color | `0.9 0.9 0.9 0.8` | Workspace border color (light, reads against the dim background). | — |
 | `show_ws_labels` | bool | `true` | Draw the workspace label on each cluster. | FR-004 |
@@ -32,6 +33,9 @@ User-facing contract validated by wf-config and shown in WCM. Read via
 - **Stay open** (FR-010, clarified): a successful relocate keeps the overview open and reflows.
 - **Fullscreen** (clarified): shown scaled in place, kept fullscreen; re-fullscreened on the target
   workspace if relocated.
+- **Per-workspace dim** (expo + scale merge): each workspace's backdrop is veiled *below* the
+  thumbnails (windows never dim); the active cell — current workspace when idle, drop target while
+  dragging — reads bright (expo's focus cue). Veil node lives at the back of the `WORKSPACE` layer.
 - **Restore** (FR-012): on any close, every touched view's position/size/stacking/opacity is exact.
 
 ## XML schema note

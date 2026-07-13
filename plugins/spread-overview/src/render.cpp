@@ -65,6 +65,19 @@ void spread_overview_t::build_spread()
         dimf{(double)og.width, (double)og.height}, current_layout_options());
     current_layout = result; // kept for the drop hit-test (Principle I)
 
+    // The current workspace's cluster is the veil's bright cell when idle (expo's focus
+    // cue). Recomputed every build so it tracks the viewport across reflows.
+    auto cws = wset->get_current_workspace();
+    current_ws_index = -1;
+    for (size_t i = 0; i < result.clusters.size(); i++)
+    {
+        if ((result.clusters[i].ws.x == cws.x) && (result.clusters[i].ws.y == cws.y))
+        {
+            current_ws_index = (int)i;
+            break;
+        }
+    }
+
     for (auto& vo : result.views)
     {
         auto v  = session_views[vo.id];
@@ -107,6 +120,44 @@ void spread_overview_t::build_spread()
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::OVERLAY), border_node);
     }
 
+    // Per-workspace dim veil (expo + scale merge). Sits at the BACK of the WORKSPACE layer
+    // — above the wallpaper/bottom panels, below the view thumbnails — so windows stay
+    // crisp while each workspace's backdrop dims. The current workspace reads bright; the
+    // drop-target brightens during a drag (input.cpp drives set_active()). Same cluster
+    // regions as the border/hit-test (Principle I).
+    {
+        std::vector<rectf> dim_rects;
+        for (auto& c : result.clusters)
+        {
+            dim_rects.push_back(c.region);
+        }
+        dim_node = std::make_shared<dim_node_t>();
+        dim_node->set_content(og, std::move(dim_rects),
+            (wf::color_t)opt_background, (double)opt_inactive_brightness, current_ws_index);
+        wf::scene::add_back(output->node_for_layer(wf::scene::layer::WORKSPACE), dim_node);
+    }
+
+    // Per-cell wallpaper (B2) — the expo-style tile backdrop. Blits the wallpaper loaded
+    // ONCE in wallpaper.cpp (B1), cover-cropped, into each cell. add_back AFTER the dim veil
+    // so it lands at the very BACK of the WORKSPACE layer: wallpaper < dim veil < thumbnails
+    // — each inactive cell shows a dimmed desktop, the active cell a bright one, thumbnails
+    // crisp on top. FAIL-SOFT: only built when the B1 load succeeded (wallpaper_ok); if it
+    // failed the node is skipped entirely and cells fall back to the real desktop showing
+    // through (today's look). Isolated behind wallpaper_ok so a load failure never alters
+    // the rest of the spread.
+    if (wallpaper_ok)
+    {
+        std::vector<rectf> wp_rects;
+        for (auto& c : result.clusters)
+        {
+            wp_rects.push_back(c.region);
+        }
+        wallpaper_node = std::make_shared<wallpaper_node_t>();
+        wallpaper_node->set_content(og, std::move(wp_rects),
+            wallpaper_tex.get_texture(), wallpaper_size);
+        wf::scene::add_back(output->node_for_layer(wf::scene::layer::WORKSPACE), wallpaper_node);
+    }
+
     // T016: one workspace label per cluster (incl. empty — they are US2 drop targets),
     // in the output OVERLAY layer so it renders on top of the thumbnails.
     if (opt_show_labels)
@@ -146,6 +197,24 @@ void spread_overview_t::clear_spread()
         wf::scene::remove_child(border_node);
         border_node.reset();
     }
+
+    // Dim veil torn down the same way (it lives in the WORKSPACE layer, but remove_child
+    // detaches from whatever parent it has — no view state touched, Principle V).
+    if (dim_node)
+    {
+        wf::scene::remove_child(dim_node);
+        dim_node.reset();
+    }
+
+    // Wallpaper tile torn down identically (also a WORKSPACE-layer child; remove_child
+    // detaches from whatever parent it has). The plugin's wallpaper_tex texture is NOT
+    // freed here — it stays loaded for the plugin lifetime and is reused every open.
+    if (wallpaper_node)
+    {
+        wf::scene::remove_child(wallpaper_node);
+        wallpaper_node.reset();
+    }
+    current_ws_index = -1;
 
     for (auto& [v, tr] : thumbnails)
     {

@@ -45,6 +45,15 @@ bool spread_overview_t::activate()
         return false;
     }
 
+    // Load the per-cell wallpaper ONCE, lazily on first open (B1: upload + report, no
+    // draw). Isolated in wallpaper.cpp and fully fail-soft, so even a load/upload failure
+    // here cannot abort activation — worst case is wallpaper_ok=false (today's look).
+    if (!wallpaper_load_attempted)
+    {
+        wallpaper_load_attempted = true;
+        load_wallpaper();
+    }
+
     // ACTIVATING -> ACTIVE collapses for now (entry animation arrives in T027).
     state = session_state::ACTIVE;
     grab->grab_input(wf::scene::layer::OVERLAY);

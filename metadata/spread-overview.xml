@@ -52,9 +52,17 @@
 		<group>
 			<_short>Appearance</_short>
 			<option name="background" type="color">
-				<_short>Background dim</_short>
-				<_long>Color drawn behind the overview.</_long>
-				<default>0.1 0.1 0.1 1.0</default>
+				<_short>Workspace dim veil</_short>
+				<_long>Tint (RGB) and full-strength opacity (alpha) of the veil drawn over each workspace to dim it. The veil sits behind the window thumbnails, so windows stay crisp while their backdrops dim. The current workspace (and the drop target while dragging) is shown bright. Actual veil strength scales with inactive_brightness.</_long>
+				<default>0.0 0.0 0.0 1.0</default>
+			</option>
+			<option name="inactive_brightness" type="double">
+				<_short>Inactive workspace brightness</_short>
+				<_long>Brightness of every workspace except the active one (the current workspace, or the drop target while dragging). 1.0 = no dim; lower = darker. Veil alpha = background alpha * (1 - this). Mirrors expo's option of the same name.</_long>
+				<default>0.7</default>
+				<min>0.0</min>
+				<max>1.0</max>
+				<precision>0.01</precision>
 			</option>
 			<option name="border_size" type="int">
 				<_short>Workspace border (px)</_short>
@@ -66,6 +74,11 @@
 				<_short>Workspace border color</_short>
 				<_long>Color of the grid border around each workspace region. Opaque by default so coincident gridlines at cluster_gap=0 do not compound alpha.</_long>
 				<default>0.9 0.9 0.9 1.0</default>
+			</option>
+			<option name="wallpaper_path" type="string">
+				<_short>Per-cell wallpaper image (PNG)</_short>
+				<_long>Absolute path to a PNG image drawn, scaled, into each workspace cell below the thumbnails (expo-style tiles). The plugin cannot read your wallpaper daemon's config, so point this at the same image file. Empty = disabled (cells show the existing full-screen wallpaper behind them). PNG only; a missing file or decode failure disables the feature without error.</_long>
+				<default></default>
 			</option>
 		</group>
 	</plugin>
