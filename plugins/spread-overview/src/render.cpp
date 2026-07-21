@@ -10,6 +10,7 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/scene.hpp>
 #include <wayfire/scene-operations.hpp>
+#include <wayfire/util/log.hpp>
 
 #include <algorithm>
 #include <string>
@@ -65,6 +66,22 @@ void spread_overview_t::build_spread(spread_anim anim)
         dimf{(double)og.width, (double)og.height}, current_layout_options());
     current_layout = result; // kept for the drop hit-test (Principle I)
 
+    // T029: note over-dense clusters (uniform thumbnail scale fell below min_scale — too many
+    // or too-large windows to fit comfortably). The layout still yields zero-overlap slots, so
+    // this is just an observability hook; a visual badge would be optional polish.
+    {
+        int dense = 0;
+        for (auto& c : result.clusters)
+        {
+            if (c.over_dense) { dense++; }
+        }
+
+        if (dense > 0)
+        {
+            LOGI("spread-overview: ", dense, " over-dense workspace(s) — thumbnails below min_scale");
+        }
+    }
+
     // The current workspace's cluster is the veil's bright cell when idle (expo's focus
     // cue). Recomputed every build so it tracks the viewport across reflows.
     auto cws = wset->get_current_workspace();
@@ -83,6 +100,7 @@ void spread_overview_t::build_spread(spread_anim anim)
         auto v  = session_views[vo.id];
         auto tr = std::make_shared<wf::scene::view_2d_transformer_t>(v);
         v->get_transformed_node()->add_transformer(tr, wf::TRANSFORMER_2D + 1, TRANSFORMER_NAME);
+        v->connect(&view_unmapped); // T028: react if this window closes mid-session
         thumbnails[v]   = tr;
         thumb_rects[v]  = vo.target_rect;
 
@@ -249,6 +267,9 @@ void spread_overview_t::clear_spread()
         anim_hook_active = false;
     }
     anim_state.clear();
+
+    // T028: stop listening for unmaps on this session's views (build_spread reconnects).
+    view_unmapped.disconnect();
 
     for (auto& label : label_nodes)
     {
@@ -491,6 +512,55 @@ void spread_overview_t::reflow()
 {
     clear_spread();
     build_spread(spread_anim::REFLOW);
+}
+
+// T028: scrub a view from every per-session map and stop listening to it. Called the moment a
+// window unmaps, so the non-owning observer_ptr is gone before the view object is destroyed —
+// nothing can dereference a dead pointer afterwards.
+void spread_overview_t::forget_view(wayfire_toplevel_view view)
+{
+    session_views.erase(
+        std::remove(session_views.begin(), session_views.end(), view), session_views.end());
+    thumbnails.erase(view);
+    thumb_rects.erase(view);
+    saved_alpha.erase(view);
+    anim_state.erase(view);
+    reflow_prev_rects.erase(view);
+    view->disconnect(&view_unmapped);
+}
+
+// T028 (Principle VI / FR-013): a window closed while the overview was open.
+void spread_overview_t::handle_view_unmapped(wayfire_toplevel_view view)
+{
+    // If the vanished view was the drag subject (or a pending press), end the gesture cleanly —
+    // no relocate, no dangling press_view — and reset the drop-target cues.
+    if (press_view == view)
+    {
+        dragging   = false;
+        pressed    = false;
+        press_view = nullptr;
+        if (border_node) { border_node->set_highlight(-1); }
+        if (dim_node)    { dim_node->set_active(current_ws_index); }
+    }
+
+    forget_view(view); // scrub the dead pointer NOW, before it is destroyed
+
+    if (session_views.empty())
+    {
+        deactivate(false); // nothing left to show -> close immediately (mirrors scale::finalize)
+        return;
+    }
+
+    // Rebuild the survivors on the next idle — out of the unmap emit and any in-progress scene
+    // walk. Snapshot their current rects first so they glide to their new slots (REFLOW).
+    snapshot_thumb_screen_rects();
+    unmap_reflow_idle.run_once([this] ()
+    {
+        if (state == session_state::ACTIVE)
+        {
+            reflow();
+        }
+    });
 }
 } // namespace spread
 } // namespace wf

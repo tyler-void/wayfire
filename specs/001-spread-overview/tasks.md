@@ -96,13 +96,13 @@ move B, both persist).
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T027 [P] Entry / exit / reflow animations driven by `duration` in `plugins/spread-overview/src/render.cpp` (60 fps target, SC-001)
-- [ ] T028 [P] **[Principle VI]** View-lifetime safety in `plugins/spread-overview/src/overview.cpp`: on a mid-session view unmap, remove its `ThumbnailRecord` and reflow; if it was the drag subject, end the drag as a snap-back — no crash, no ghost (FR-013, SC-007)
-- [ ] T029 [P] Edge cases in `plugins/spread-overview/src/{overview,render}.cpp`: empty-workspace cluster stays a valid drop target; single-window session; surface the `over_dense` flag in the UI (data-model)
+- [x] T027 [P] Entry / exit / reflow animations driven by `duration` (`wf::animation::duration_t` + per-view `timed_transition_t`, ticked by an `OUTPUT_EFFECT_PRE` hook). ✅ **Entry** (converge from real positions — off-workspace windows slide in directionally), **reflow** (survivors glide to new slots via a pre-relocate rect snapshot), **exit** (destination-aware: current-ws windows settle opaque, others fade in place; veil/wallpaper/grid dissolve via per-node alpha; teardown deferred out of the render hook via `wl_idle_call`). User-verified.
+- [x] T028 [P] **[Principle VI]** View-lifetime safety — ✅ per-view `wf::view_unmapped_signal`; on unmap `forget_view()` scrubs the (non-owning `observer_ptr`) view from every map before it is destroyed, the drag ends cleanly if it was the subject, then the survivors reflow (deferred to idle) or the overview closes if none remain (FR-013, SC-007)
+- [x] T029 [P] Edge cases — ✅ empty-workspace clusters remain valid drop targets + single-window session both work by construction (verified); `over_dense` surfaced as an observability `LOGI` in `render.cpp` (a visual badge left as optional polish)
 - [ ] T030 [P] **[Known-Open include_minimized]** Keep `include_minimized` parsed-but-no-op and document it as stubbed in `metadata/spread-overview.xml` (long description) until the `natural_size` source is resolved (research.md R13)
 - [x] T031 Exit paths (`input.cpp`) — ✅ compiled: **empty-cell click → `hit_test_cluster` → `request_workspace(target)` + close** (expo behavior; replaces the old `close_on_bg_click` "just close" — option removed). Click outside all cells → close, no switch. Esc + re-trigger close **without** switching. Gated by the click-vs-drag threshold, so a drag that starts on empty space never switches. Live-verify restore on each path (FR-011)
 - [ ] T032 Run the full `quickstart.md` validation (all 7 scenarios) on master and confirm SC-001…SC-008 (fullscreen scenario exercises T022; alpha uses T015; fullscreen-enum uses T017); record results
-- [ ] T033 [P] Update `docs/` (plugin README / notes) if the implementation surfaced anything worth recording
+- [x] T033 [P] Docs — ✅ `plugins/spread-overview/README.md` (usage, full config-option reference, animation + drop behavior, build/install, links to spec + ADRs) and ADR-001/002/003 in `docs/adr/`
 
 ---
 

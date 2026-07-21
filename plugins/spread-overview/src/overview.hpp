@@ -15,6 +15,7 @@
 #include <wayfire/render-manager.hpp>
 #include <wayfire/util.hpp>
 #include <wayfire/util/duration.hpp>
+#include <wayfire/signal-definitions.hpp>
 #include <wayfire/plugins/common/input-grab.hpp>
 #include <wayfire/plugins/common/simple-text-node.hpp>
 
@@ -159,6 +160,20 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // away at teardown. Driven by the same `duration`; only runs during an animated close.
     wf::animation::simple_animation_t overlay_fade{opt_duration};
 
+    // T028 (Principle VI / FR-013): a window closing mid-session. We listen per-view for unmap;
+    // on unmap the dead observer_ptr is scrubbed from every map synchronously (it is non-owning,
+    // so a stale entry would dangle), the drag ends cleanly if it was the subject, and the
+    // survivors reflow — the rebuild deferred to idle, out of the unmap emit / scene walk.
+    wf::signal::connection_t<wf::view_unmapped_signal> view_unmapped =
+        [this] (wf::view_unmapped_signal *ev)
+    {
+        if (auto v = wf::toplevel_cast(ev->view))
+        {
+            handle_view_unmapped(v);
+        }
+    };
+    wf::wl_idle_call unmap_reflow_idle;
+
     // Each thumbnail's on-screen (output-local) rect captured just BEFORE a relocate, so the
     // REFLOW rebuild can animate every thumbnail from where it visually was to its new slot
     // (the moved window glides to its target cluster; others slide as the layout reflows).
@@ -204,6 +219,12 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     void finalize_entry_anim();
     void snapshot_thumb_screen_rects();
     void start_exit_anim(); // A2: animate every thumbnail back to its real position (identity)
+
+    // T028: a session view unmapped mid-overview. forget_view scrubs the dead observer_ptr from
+    // every map (+ disconnects it); handle_view_unmapped ends any drag on it, then reflows the
+    // survivors (or closes if none remain).
+    void handle_view_unmapped(wayfire_toplevel_view view);
+    void forget_view(wayfire_toplevel_view view);
 
     // move.cpp — the only view-relocation / workspace-switch contact (Principle II).
     void relocate(wayfire_toplevel_view view, wf::point_t target_ws);
