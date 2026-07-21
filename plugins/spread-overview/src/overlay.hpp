@@ -34,7 +34,7 @@ class border_node_t : public wf::scene::node_t
             auto tex = self->tex.get_texture();
             if (tex)
             {
-                data.pass->add_texture(tex, data.target, self->geometry, data.damage);
+                data.pass->add_texture(tex, data.target, self->geometry, data.damage, self->alpha);
             }
         }
     };
@@ -70,6 +70,9 @@ class border_node_t : public wf::scene::node_t
     // cluster_rects), -1 = none. Re-renders + damages.
     void set_highlight(int cluster_index);
 
+    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    float alpha = 1.0f;
+
   private:
     void rerender();
 
@@ -101,7 +104,7 @@ class dim_node_t : public wf::scene::node_t
             auto tex = self->tex.get_texture();
             if (tex)
             {
-                data.pass->add_texture(tex, data.target, self->geometry, data.damage);
+                data.pass->add_texture(tex, data.target, self->geometry, data.damage, self->alpha);
             }
         }
     };
@@ -135,6 +138,9 @@ class dim_node_t : public wf::scene::node_t
 
     // Re-point the bright (un-veiled) cluster. -1 = all cells dim. Re-renders on change.
     void set_active(int cluster_index);
+
+    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    float alpha = 1.0f;
 
   private:
     void rerender();
@@ -176,7 +182,7 @@ class wallpaper_node_t : public wf::scene::node_t
             // in set_content (cells are uniform), so all cells show an undistorted crop.
             for (const auto& cell : self->cells)
             {
-                data.pass->add_texture(self->tex, data.target, cell, data.damage);
+                data.pass->add_texture(self->tex, data.target, cell, data.damage, self->alpha);
             }
         }
     };
@@ -207,6 +213,9 @@ class wallpaper_node_t : public wf::scene::node_t
     void set_content(wf::geometry_t output_geometry,
         std::vector<rectf> cell_rects,
         std::shared_ptr<wf::texture_t> texture, wf::dimensions_t tex_size);
+
+    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    float alpha = 1.0f;
 
   private:
     wf::geometry_t geometry{0, 0, 0, 0};

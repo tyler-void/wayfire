@@ -13,6 +13,7 @@
 #include <wayfire/toplevel-view.hpp>
 #include <wayfire/view-transform.hpp>
 #include <wayfire/render-manager.hpp>
+#include <wayfire/util.hpp>
 #include <wayfire/util/duration.hpp>
 #include <wayfire/plugins/common/input-grab.hpp>
 #include <wayfire/plugins/common/simple-text-node.hpp>
@@ -40,6 +41,10 @@ class thumb_anim_t : public wf::animation::duration_t
     wf::animation::timed_transition_t scale_y{*this};
     wf::animation::timed_transition_t translation_x{*this};
     wf::animation::timed_transition_t translation_y{*this};
+    // Opacity (T027 A2 exit): destination-workspace windows stay opaque and settle; every
+    // other window fades to 0 in place instead of ballooning off-screen. Entry/reflow keep
+    // it pinned at 1 (set start==end==1) so those windows never fade.
+    wf::animation::timed_transition_t alpha{*this};
 };
 // State machine (data-model.md). Only IDLE/ACTIVE are exercised this increment;
 // ACTIVATING/DRAGGING/DEACTIVATING become meaningful with animation + drag (T011+).
@@ -98,7 +103,12 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
 
     bool toggle();
     bool activate();
-    void deactivate();
+    // animate=true (Esc/toggle/dismiss): play the exit animation, then tear down when it
+    // settles. animate=false (click-to-navigate, grab cancel): tear down immediately.
+    void deactivate(bool animate = true);
+    // The real teardown: clear_spread + ungrab + deactivate_plugin + IDLE. Runs immediately
+    // for a non-animated close, or (deferred via finish_idle) once the exit animation ends.
+    void finish_deactivate();
 
     // Per-session spread state (T011/T013). Views in enumeration order; the
     // scale/translate transformer per view; the on-screen (output-local) rect per
@@ -140,6 +150,14 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     std::map<wayfire_toplevel_view, thumb_anim_t> anim_state;
     wf::effect_hook_t anim_hook = [this] () { animate_step(); };
     bool anim_hook_active = false;
+    // The exit teardown must not run from inside the render hook (it mutates the scene graph
+    // and drops the input grab); animate_step defers it here to the next event-loop idle (A2).
+    wf::wl_idle_call finish_idle;
+
+    // Overlay opacity fade for the exit (A2): the dim veil, wallpaper tiles and grid fade out
+    // together with the windows so the overview dissolves as one, instead of the grid snapping
+    // away at teardown. Driven by the same `duration`; only runs during an animated close.
+    wf::animation::simple_animation_t overlay_fade{opt_duration};
 
     // Each thumbnail's on-screen (output-local) rect captured just BEFORE a relocate, so the
     // REFLOW rebuild can animate every thumbnail from where it visually was to its new slot
@@ -185,6 +203,7 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     void animate_step();
     void finalize_entry_anim();
     void snapshot_thumb_screen_rects();
+    void start_exit_anim(); // A2: animate every thumbnail back to its real position (identity)
 
     // move.cpp — the only view-relocation / workspace-switch contact (Principle II).
     void relocate(wayfire_toplevel_view view, wf::point_t target_ws);

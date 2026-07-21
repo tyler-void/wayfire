@@ -131,10 +131,12 @@ void spread_overview_t::build_spread(spread_anim anim)
             a.scale_y.set(s0, s);
             a.translation_x.set(tx0, tx);
             a.translation_y.set(ty0, ty);
+            a.alpha.set(1.0, 1.0); // entry/reflow never fade — keep opaque
             a.start();
             tr->scale_x = tr->scale_y = (float)s0;
             tr->translation_x = (float)tx0;
             tr->translation_y = (float)ty0;
+            tr->alpha = 1.0f;
         }
 
         // T015: force opaque, capturing the daemon's dimming to restore on exit.
@@ -327,12 +329,25 @@ void spread_overview_t::animate_step()
         tr->scale_y = (float)(double)a.scale_y;
         tr->translation_x = (float)(double)a.translation_x;
         tr->translation_y = (float)(double)a.translation_y;
+        tr->alpha = (float)(double)a.alpha;
         v->get_transformed_node()->end_transform_update();
 
         if (a.running())
         {
             any_running = true;
         }
+    }
+
+    // Exit overlay fade (A2): dissolve the veil / wallpaper / grid alongside the windows, so
+    // the overview fades out as one instead of the grid cutting away at teardown.
+    if (overlay_fade.running())
+    {
+        const float oa = (float)(double)overlay_fade;
+        if (dim_node)       { dim_node->alpha      = oa; }
+        if (wallpaper_node) { wallpaper_node->alpha = oa; }
+        if (border_node)    { border_node->alpha    = oa; }
+        output->render->damage_whole();
+        any_running = true;
     }
 
     if (any_running)
@@ -343,6 +358,74 @@ void spread_overview_t::animate_step()
     {
         output->render->rem_effect(&anim_hook);
         anim_hook_active = false;
+
+        // If this was the EXIT animation (A2), run the real teardown — but OUTSIDE this render
+        // hook, which mutates the scene graph and drops the input grab. Defer to the next idle.
+        if (state == session_state::DEACTIVATING)
+        {
+            finish_idle.run_once([this] () { finish_deactivate(); });
+        }
+    }
+}
+
+// A2 exit: animate every thumbnail from its current transform back to its real position
+// (identity — scale 1, no translation), the reverse of the entry slide-in. finish_deactivate
+// (deferred out of animate_step) tears the session down once the clocks settle.
+void spread_overview_t::start_exit_anim()
+{
+    anim_state.clear();
+
+    // Destination-aware exit (research: fade, don't fly). On a dismiss the destination is the
+    // current viewport: its windows SETTLE back to their real positions (staying opaque), while
+    // every OTHER workspace's windows FADE OUT in place — no ballooning off-screen, and an
+    // empty destination just clears calmly instead of a flock of windows flying past.
+    auto cws = output->wset()->get_current_workspace();
+
+    for (auto& [v, tr] : thumbnails)
+    {
+        if (!v || !v->is_mapped())
+        {
+            continue;
+        }
+
+        auto& a = anim_state.try_emplace(v, opt_duration).first->second;
+        auto mw = output->wset()->get_view_main_workspace(v);
+        const bool on_destination = (mw.x == cws.x) && (mw.y == cws.y);
+
+        if (on_destination)
+        {
+            // Settle to the real desktop position (identity), staying opaque.
+            a.scale_x.set(tr->scale_x, 1.0);
+            a.scale_y.set(tr->scale_y, 1.0);
+            a.translation_x.set(tr->translation_x, 0.0);
+            a.translation_y.set(tr->translation_y, 0.0);
+            a.alpha.set(tr->alpha, 1.0);
+        }
+        else
+        {
+            // Fade out where it sits — hold the transform, drop opacity to 0.
+            a.scale_x.set(tr->scale_x, tr->scale_x);
+            a.scale_y.set(tr->scale_y, tr->scale_y);
+            a.translation_x.set(tr->translation_x, tr->translation_x);
+            a.translation_y.set(tr->translation_y, tr->translation_y);
+            a.alpha.set(tr->alpha, 0.0);
+        }
+
+        a.start();
+    }
+
+    // Fade the veil / wallpaper / grid out in lockstep with the windows (applied per-frame in
+    // animate_step) so the whole overview dissolves rather than the grid snapping at teardown.
+    overlay_fade.animate(1.0, 0.0);
+
+    if (!anim_state.empty() || overlay_fade.running())
+    {
+        if (!anim_hook_active)
+        {
+            output->render->add_effect(&anim_hook, wf::OUTPUT_EFFECT_PRE);
+            anim_hook_active = true;
+        }
+        output->render->schedule_redraw();
     }
 }
 
@@ -369,6 +452,7 @@ void spread_overview_t::finalize_entry_anim()
         tr->scale_y = (float)a.scale_y.end;
         tr->translation_x = (float)a.translation_x.end;
         tr->translation_y = (float)a.translation_y.end;
+        tr->alpha = (float)a.alpha.end;
     }
 
     output->render->rem_effect(&anim_hook);

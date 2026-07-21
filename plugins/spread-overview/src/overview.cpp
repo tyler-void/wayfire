@@ -19,7 +19,15 @@ void spread_overview_t::fini()
 {
     if (state != session_state::IDLE)
     {
-        deactivate();
+        // Force a synchronous teardown — no exit animation while the plugin is being
+        // destroyed (the deferred idle would fire after we're gone).
+        finish_idle.disconnect();
+        if (anim_hook_active)
+        {
+            output->render->rem_effect(&anim_hook);
+            anim_hook_active = false;
+        }
+        finish_deactivate();
     }
 
     output->rem_binding(&toggle_cb);
@@ -33,7 +41,7 @@ bool spread_overview_t::toggle()
         return activate();
     }
 
-    deactivate();
+    deactivate(true); // Esc / toggle-off: animate the thumbnails back out
     return true;
 }
 
@@ -63,14 +71,34 @@ bool spread_overview_t::activate()
     return true;
 }
 
-void spread_overview_t::deactivate()
+void spread_overview_t::deactivate(bool animate)
 {
-    if (state == session_state::IDLE)
+    // Ignore if already closed, or an exit animation is already playing.
+    if ((state == session_state::IDLE) || (state == session_state::DEACTIVATING))
     {
         return;
     }
 
+    if (!animate)
+    {
+        // Immediate close (click-to-focus, empty-cell switch, grab cancel): the caller is
+        // about to navigate, so tear down now rather than animate over the transition.
+        finish_deactivate();
+        return;
+    }
+
+    // Animate every thumbnail back to its real position; finish_deactivate runs once the
+    // clocks settle (deferred to idle in animate_step), keeping the grab + scene up meanwhile.
     state = session_state::DEACTIVATING;
+    start_exit_anim();
+    if (!anim_hook_active)
+    {
+        finish_deactivate(); // nothing to animate (no thumbnails) -> tear down immediately
+    }
+}
+
+void spread_overview_t::finish_deactivate()
+{
     clear_spread();
     grab->ungrab_input();
     output->deactivate_plugin(&grab_interface);

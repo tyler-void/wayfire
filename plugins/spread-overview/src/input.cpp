@@ -51,6 +51,12 @@ wf::pointf_t spread_overview_t::dragged_thumb_center(wf::pointf_t cursor_local)
 
 void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& event)
 {
+    // Ignore input while the exit animation plays (the session is already closing).
+    if (state == session_state::DEACTIVATING)
+    {
+        return;
+    }
+
     if (event.button != BTN_LEFT)
     {
         return;
@@ -97,7 +103,7 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
     {
         auto target = press_view;
         LOGI("spread-overview: click -> focus + close");
-        deactivate();
+        deactivate(false); // navigating (focus/raise, maybe switch ws) -> close immediately
         if (target && target->is_mapped())
         {
             // allow_switch_ws=true: a clicked thumbnail may live on another workspace;
@@ -116,7 +122,7 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
         if (auto tgt = hit_test_cluster(current_layout, local.x, local.y))
         {
             LOGI("spread-overview: empty click -> switch to ws (", tgt->x, ",", tgt->y, ")");
-            deactivate();
+            deactivate(false); // switching workspace -> close immediately, then switch
             switch_workspace(wf::point_t{tgt->x, tgt->y});
         }
         else
@@ -135,7 +141,7 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
     (void)position; // use the shared cursor source, matching the button handler's space
     (void)time_ms;
 
-    if (!pressed || !press_view)
+    if ((state == session_state::DEACTIVATING) || !pressed || !press_view)
     {
         return;
     }
@@ -273,10 +279,15 @@ void spread_overview_t::end_drag(wf::pointf_t release_local)
 
 void spread_overview_t::handle_keyboard_key(wf::seat_t*, wlr_keyboard_key_event event)
 {
+    if (state == session_state::DEACTIVATING)
+    {
+        return; // already animating out
+    }
+
     if ((event.state == WL_KEYBOARD_KEY_STATE_PRESSED) && (event.keycode == KEY_ESC))
     {
         LOGI("spread-overview: Esc - deactivating");
-        deactivate();
+        deactivate(true); // animate the thumbnails back out
     }
 }
 } // namespace spread
