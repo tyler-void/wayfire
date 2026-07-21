@@ -1,184 +1,98 @@
-# [Wayfire]
+# Wayfire — Personal Fork
 
-[Wayfire]: https://wayfire.org
+A personal fork of [Wayfire](https://github.com/WayfireWM/wayfire) — a 3D Wayland compositor
+built on [wlroots](https://gitlab.freedesktop.org/wlroots/wlroots) — extended with my own
+plugins and optimizations. Custom work is developed **in-tree**, spec-driven, with architecture
+decision records and unit tests, and kept curated on top of upstream `master`.
 
-![Version](https://img.shields.io/github/v/release/WayfireWM/wayfire)
-[![Matrix: #wayfire:matrix.org](https://img.shields.io/badge/matrix-%23wayfire%3Amatrix.org-blue)](https://matrix.to/#/#wayfire:matrix.org)
-[![IRC: #wayfire on Libera.chat](https://img.shields.io/badge/IRC-%23wayfire%20at%20libera.chat-green)](https://web.libera.chat/#wayfire)
-[![Discord](https://img.shields.io/discord/1144831589877043220?label=Discord)](https://discord.gg/5SWAxmBCUH)
-[![CI](https://github.com/WayfireWM/wayfire/workflows/CI/badge.svg)](https://github.com/WayfireWM/wayfire/actions)
-[![Packaging status](https://repology.org/badge/tiny-repos/wayfire.svg)](https://repology.org/project/wayfire/versions)
-[![License](https://img.shields.io/github/license/WayfireWM/wayfire)](LICENSE)
+> **Featured build:** `spread-overview` — an *expo × scale* hybrid window overview.
 
-###### [Get started] | [Manual] | [Configuration]
+---
 
-[Get started]: https://github.com/WayfireWM/wayfire/wiki/Tutorial
-[Manual]: https://github.com/WayfireWM/wayfire/wiki/General
-[Configuration]: https://github.com/WayfireWM/wayfire/wiki/Configuration
+## ✨ spread-overview
 
-Wayfire is a 3D [Wayland] compositor, inspired by [Compiz] and based on [wlroots].
+A window overview that merges two ideas which usually live in separate plugins:
 
-It aims to create a customizable, extendable and lightweight environment without sacrificing its appearance.
+- **expo** (Compiz) — see *all* workspaces at once, as a zoomed-out grid.
+- **scale** (GNOME / macOS Exposé) — see every window as an individual, crisp, directly-draggable thumbnail.
 
-[![Wayfire demos](https://img.youtube.com/vi_webp/2PtNzxDsxYM/maxresdefault.webp)](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle "YouTube – Wayfire demos")
-[![YouTube Play Button](https://www.iconfinder.com/icons/317714/download/png/16)](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle) · [Wayfire demos](https://youtube.com/playlist?list=PLb7YRKEhWEBUIoT-a29UoJW9mhfzjpNle)
+…and adds what neither does well: **drag a window from one workspace onto another to move it there**,
+with the overview staying open so you can rearrange several in one pass.
 
-[Wayland]: https://wayland.freedesktop.org
-[wlroots]: https://github.com/swaywm/wlroots
-[Compiz]: https://launchpad.net/compiz
+<!-- Record a short screencast (open overview → drag a window across workspaces → close),
+     save it as docs/media/spread-overview.gif, and uncomment:
+     ![spread-overview demo](docs/media/spread-overview.gif) -->
+> _Demo GIF coming — see **Recording a demo** below._
 
-## Dependencies
+**What it does**
+- Every window across every workspace, grouped into an expo-style grid with a per-workspace dim veil and optional per-cell wallpaper.
+- Drag-to-relocate with a "snap the window *fully* into the target workspace" drop model.
+- Correct handling of maximized / tiled / fullscreen / sticky windows.
+- Entry / reflow / exit animations, including a research-driven "fade, don't fly" close.
+- `super + G` to toggle; fully themeable (colors, animation, wallpaper) — see the [plugin README](plugins/spread-overview/README.md).
 
-### Wayfire Dependencies
+### Engineering highlights
 
-These are the dependencies needed for building Wayfire.
+The interesting work is under the hood:
 
-- [Cairo](https://cairographics.org)
-- [Pango](https://pango.gnome.org/) and PangoCairo
-- [FreeType](https://freetype.org)
-- [GLM](https://glm.g-truc.net)
-- [libdrm](https://dri.freedesktop.org/wiki/DRM/)
-- [libevdev](https://freedesktop.org/wiki/Software/libevdev/)
-- [libGL](https://mesa3d.org)
-- [libinput](https://freedesktop.org/wiki/Software/libinput/)
-- [libjpeg](https://libjpeg-turbo.org)
-- [libpng](http://libpng.org/pub/png/libpng.html)
-- [libxkbcommon](https://xkbcommon.org)
-- [libxml2](http://xmlsoft.org/)
-- [Pixman](https://pixman.org)
-- [pkg-config](https://freedesktop.org/wiki/Software/pkg-config/)
-- [Wayland](https://wayland.freedesktop.org)
-- [wayland-protocols](https://gitlab.freedesktop.org/wayland/wayland-protocols)
-- [wf-config](https://github.com/WayfireWM/wf-config)
-- [wlroots](https://github.com/swaywm/wlroots)
+| Area | What & why |
+|---|---|
+| **Scene-graph rendering** | Thumbnails, dim veil, wallpaper tiles and grid are custom `wf::scene` nodes with per-node opacity; the drag is a self-managed `view_2d_transformer_t` translate rather than the built-in drag engine ([ADR-001](docs/adr/001-self-managed-drag.md)). |
+| **UX decided by research** | The drop model (snap-into-workspace vs. the viewport model's straddle) and the exit animation ("fade, don't fly") were chosen from researched prior art — Compiz, GNOME, macOS — and documented ([ADR-003](docs/adr/003-drop-snaps-into-workspace.md)). |
+| **Graphics robustness** | Per-cell wallpaper loads the image file directly instead of capturing the live scene — deliberately avoiding cross-GPU buffer transfer on a hybrid Intel + NVIDIA setup ([ADR-002](docs/adr/002-wallpaper-file-load.md)); every decode/upload path is fail-soft and never crashes the compositor. |
+| **Memory safety** | Views are non-owning `observer_ptr`s; a window closing mid-overview is scrubbed from all state *before* it is destroyed (no use-after-free), then triggers a reflow. |
+| **Transaction timing** | Relocating a maximized window required re-pinning its tile state on the target workspace and reasoning about Wayfire's synchronous transaction-commit path. |
+| **Tested pure core** | The layout is a pure, deterministic function unit-tested with doctest; render and hit-test share the same geometry, so what you see is exactly what receives a drop. |
+| **Process** | Spec-driven (`specs/`), decisions captured as ADRs, and a risk-isolation workflow: every increment build-checks, then is verified live from a throwaway TTY before it lands. |
 
-### wlroots Dependencies
+**Stack:** C++17 · Wayfire 0.11-dev · wlroots · Wayland · Cairo · Meson / Ninja.
 
-These are the dependencies needed for building wlroots, and should be installed before building it.
-They are relevant for cases when the system doesn't have a version of wlroots installed.
+**Read more:** [plugin README](plugins/spread-overview/README.md) ·
+[design decisions (ADRs)](docs/adr/) ·
+[spec & contracts](specs/001-spread-overview/) ·
+[layout unit test](test/plugins/spread-overview-layout.cpp).
 
-#### DRM Backend (required)
+---
 
-- [libdisplay-info-dev](https://gitlab.freedesktop.org/emersion/libdisplay-info)
-- [hwdata-dev](https://github.com/vcrhonek/hwdata)
+## Custom features in this fork
 
-#### GLES2 renderer (required)
-- [libglvnd](https://gitlab.freedesktop.org/glvnd/libglvnd)
-- [mesa](https://gitlab.freedesktop.org/mesa/mesa) (with libEGL and gbm support)
+See **[FEATURES.md](FEATURES.md)** for the running index of everything this fork adds on top of
+upstream Wayfire.
 
-#### Libinput Backend (required)
-- [libinput](https://gitlab.freedesktop.org/libinput/libinput)
+---
 
-#### Session Provider (required)
+## Building
 
-- libudev (via [systemd](https://systemd.io/) **or** other providers)
-- [seatd](https://git.sr.ht/~kennylevinsen/seatd)
+Built from source against Wayfire master; in-tree plugins (like `spread-overview`) build with the
+compositor:
 
-#### XWayland Support (optional)
-
-- [xcb](https://xcb.freedesktop.org/)
-- [xcb-composite](https://xorg.freedesktop.org/wiki/)
-- [xcb-render](https://xorg.freedesktop.org/wiki/)
-- [xcb-xfixes](https://xorg.freedesktop.org/wiki/)
-
-#### X11 Backend (optional)
-
-- [xcb](https://xcb.freedesktop.org/)
-- [x11-xcb](https://xcb.freedesktop.org/)
-- [xcb-xinput](https://xorg.freedesktop.org/wiki/)
-- [xcb-xfixes](https://xorg.freedesktop.org/wiki/)
-
-## Installation
-
-The easiest way to install Wayfire, wf-shell and WCM to get a functional desktop is to use the [install scripts](https://github.com/WayfireWM/wf-install).
-
-Alternatively, you can build from source:
-
-``` sh
-meson build
+```sh
+meson setup build
 ninja -C build
-sudo ninja -C build install
+sudo ninja -C build install    # installs to the configured prefix
 ```
 
-**Note**: `wf-config` and `wlroots` can be built as submodules, by specifying
-`-Duse_system_wfconfig=disabled` and `-Duse_system_wlroots=disabled` options to `meson`.
-This is the default if they are not present on your system.
+Run `wayfire` from a TTY. Build the pure-layout tests with `-Dtests=enabled`, then
+`meson test -C build`. Configuration lives in `~/.config/wayfire.ini` — add `spread-overview` to
+the `[core] plugins` list; options are documented in the [plugin README](plugins/spread-overview/README.md).
 
-Installing [wf-shell](https://github.com/WayfireWM/wf-shell) is recommended for a complete experience.
+### Recording a demo
 
-###### Arch Linux
+To capture the demo GIF referenced above, record with [`wf-recorder`](https://github.com/ammen99/wf-recorder)
+while you open the overview, drag a window between workspaces, and close it, then convert:
 
-[wayfire](https://aur.archlinux.org/packages/wayfire/) and [wayfire-git] are available in the [AUR].
-
-``` sh
-yay -S wayfire
-```
-
-[AUR]: https://aur.archlinux.org
-[wayfire-git]: https://aur.archlinux.org/packages/wayfire-git/
-
-###### Exherbo
-
-``` sh
-cave resolve -x wayfire
-```
-
-###### Fedora
-
-``` sh
-dnf install wayfire
-```
-
-###### FreeBSD
-Install the latest release and recommended addons with
-``` sh
-pkg install wayfire wayfire-plugins-extra wf-shell wcm
-```
-
-###### Gentoo
-Install the latest release with
 ```sh
-emerge --ask --verbose wayfire
-```
-and to use the live version
-```sh
-emerge --ask --verbose "=gui-wm/wayfire-9999"
+wf-recorder -f demo.mp4                 # Ctrl-C to stop
+ffmpeg -i demo.mp4 -vf "fps=20,scale=960:-1" docs/media/spread-overview.gif
 ```
 
-###### NixOS
+Keep it to ~5–8 seconds, then uncomment the image line in the spread-overview section above.
 
-Enable Wayfire in your NixOS configuration:
-```nix
-programs.wayfire = {
-  enable = true;
-  plugins = with pkgs.wayfirePlugins; [
-    wcm
-    wf-shell
-    wayfire-plugins-extra
-  ];
-};
-```
+## About the base project
 
-###### Ubuntu/Debian 13
-
-```
-apt install wayfire
-```
-
-###### Void
-
-``` sh
-xbps-install -S wayfire
-```
-
-## Configuration
-
-Copy [`wayfire.ini`] to `~/.config/wayfire.ini` or `~/.config/wayfire/wayfire.ini`.
-Before running Wayfire, you may want to change the command to start a terminal.
-See the [Configuration] document for information on the options.
-
-[`wayfire.ini`]: wayfire.ini
-
-## Running
-
-Run [`wayfire`][Manual] from a TTY, or via a Wayland-compatible login manager.
+This fork is based on **[Wayfire](https://github.com/WayfireWM/wayfire)** by the Wayfire
+contributors — a customizable, lightweight 3D Wayland compositor inspired by Compiz and built on
+wlroots. For the full dependency list, packaging options, and upstream documentation, see the
+[upstream repository](https://github.com/WayfireWM/wayfire), the
+[wiki](https://github.com/WayfireWM/wayfire/wiki), and [wayfire.org](https://wayfire.org).
+Licensed under the terms in [LICENSE](LICENSE).
