@@ -207,14 +207,18 @@ class blur_render_instance_t : public transformer_render_instance_t<blur_node_t>
         auto bounding_box = self->get_bounding_box();
         data.pass->custom_gles_subpass([&]
         {
-            auto tex = wf::gles_texture_t{get_texture(data.target.scale)};
+            wf::dimensionsf_t render_size;
+            auto contents = get_texture(data.target.scale, &render_size);
+
+            auto tex = wf::gles_texture_t{contents};
             if (!data.damage.empty())
             {
-                auto translucent_damage    = calculate_translucent_damage(data.target, data.damage);
-                auto translucent_damage_fb =
-                    data.target.framebuffer_region_from_geometry_region(translucent_damage);
+                auto translucent_damage = calculate_translucent_damage(data.target, data.damage);
                 self->provider()->prepare_blur(data.target, translucent_damage);
-                self->provider()->render(tex, bounding_box, data.damage, data.target, data.target);
+
+                wf::geometry_t render_geometry = wf::construct_box(wf::origin(bounding_box), render_size);
+                render_geometry = data.target.aligned_geometry_from_geometry_box(render_geometry);
+                self->provider()->render(tex, render_geometry, data.damage, data.target, data.target);
             }
 
             GL_CALL(glDisable(GL_SCISSOR_TEST));

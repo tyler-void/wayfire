@@ -11,6 +11,9 @@
 #include <wayfire/util/log.hpp>
 
 wf::plugin_manager_t::plugin_manager_t()
+{}
+
+void wf::plugin_manager_t::start()
 {
     this->plugins_opt.load_option("core/plugins");
     this->enable_so_unloading.load_option("workarounds/enable_so_unloading");
@@ -323,6 +326,8 @@ std::vector<std::string> wf::get_plugin_paths()
 
     if (xdg_data_dir != "")
     {
+        plugin_prefixes.push_back(xdg_data_dir + "/wayfire/plugin-manager/install/lib/wayfire");
+        plugin_prefixes.push_back(xdg_data_dir + "/wayfire/plugin-manager/install/lib64/wayfire");
         plugin_prefixes.push_back(xdg_data_dir + "/wayfire/plugins");
     }
 

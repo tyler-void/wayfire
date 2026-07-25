@@ -179,6 +179,7 @@ pkgconfig.generate(
     variables:    ['metadatadir=${prefix}/' + metadata_dir_suffix,
                    'sysconfdir=' + sysconfdir,
                    'plugindir=${libdir}/wayfire',
+                   'pluginabi=' + conf_data.get('WAYFIRE_API_ABI_VERSION'),
                    'icondir=${prefix}/share/wayfire/icons',
                    'pkgdatadir='+pkgdatadir]
     )

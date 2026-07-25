@@ -1,5 +1,6 @@
 #include "blur.hpp"
 #include "wayfire/core.hpp"
+#include "wayfire/debug.hpp"
 #include "wayfire/geometry.hpp"
 #include "wayfire/region.hpp"
 #include "wayfire/scene-render.hpp"
@@ -217,7 +218,6 @@ static wf::pointf_t get_center(wf::geometry_t g)
 void wf_blur_base::render(wf::gles_texture_t src_tex, wf::geometry_t src_box, const wf::regionf_t& damage,
     const wf::render_target_t& background_source_fb, const wf::render_target_t& target_fb)
 {
-    src_box = target_fb.aligned_geometry_from_geometry_box(src_box);
     wf::gles_texture_t blurred_background = wf::gles_texture_t::from_aux(fb[0]);
     wf::gles::ensure_render_buffer_fb_id(target_fb);
     blend_program.use(src_tex.type);
@@ -231,11 +231,11 @@ void wf_blur_base::render(wf::gles_texture_t src_tex, wf::geometry_t src_box, co
     };
 
     const float vertex_data_pos[] = {
-        static_cast<float>(1.0f * src_box.x), static_cast<float>(1.0f * src_box.y + src_box.height),
-        static_cast<float>(1.0f * src_box.x + src_box.width),
-        static_cast<float>(1.0f * src_box.y + src_box.height),
-        static_cast<float>(1.0f * src_box.x + src_box.width), static_cast<float>(1.0f * src_box.y),
-        static_cast<float>(1.0f * src_box.x), static_cast<float>(1.0f * src_box.y),
+        static_cast<float>(src_box.x), static_cast<float>(src_box.y + src_box.height),
+        static_cast<float>(src_box.x + src_box.width),
+        static_cast<float>(src_box.y + src_box.height),
+        static_cast<float>(src_box.x + src_box.width), static_cast<float>(src_box.y),
+        static_cast<float>(src_box.x), static_cast<float>(src_box.y),
     };
 
     blend_program.attrib_pointer("position", 2, 0, vertex_data_pos);
@@ -269,7 +269,7 @@ void wf_blur_base::render(wf::gles_texture_t src_tex, wf::geometry_t src_box, co
     blend_program.uniformMatrix4f("background_uv_matrix", composite);
 
     /* Blend blurred background with window texture src_tex */
-    blend_program.uniformMatrix4f("mvp", wf::gles::render_target_orthographic_projection(target_fb));
+    blend_program.uniformMatrix4f("mvp", wf::gles::render_target_aligned_orthographic_projection(target_fb));
     /* XXX: core should give us the number of texture units used */
     blend_program.uniform1i("bg_texture", 1);
     blend_program.uniform1f("sat", saturation_opt);
@@ -281,11 +281,10 @@ void wf_blur_base::render(wf::gles_texture_t src_tex, wf::geometry_t src_box, co
     /* Render it to target_fb */
     wf::gles::bind_render_buffer(target_fb);
 
-    for (const auto& box : damage)
+    wf::gles::for_each_scissor_rect(target_fb, damage, [&]
     {
-        wf::gles::render_target_logic_scissor(target_fb, box);
         GL_CALL(glDrawArrays(GL_TRIANGLE_FAN, 0, 4));
-    }
+    });
 
     /*
      * Disable stuff

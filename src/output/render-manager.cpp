@@ -130,6 +130,7 @@ struct swapchain_damage_manager_t
 
         frame_damage |= region;
         wlr_damage_ring_add(&damage_ring, region.to_pixman());
+        pending_frame_request = true;
         if (repaint)
         {
             schedule_repaint();
@@ -146,6 +147,7 @@ struct swapchain_damage_manager_t
         /* Wlroots expects damage after scaling */
         frame_damage |= box;
         wlr_damage_ring_add_box(&damage_ring, &box);
+        pending_frame_request = true;
         if (repaint)
         {
             schedule_repaint();
@@ -239,24 +241,44 @@ struct swapchain_damage_manager_t
     }
 
     bool force_next_frame = false;
+
+    // Tracks whether a new frame is needed at all.
+    // Set when new content was damaged, cleared when a frame (composited or direct scanout) is presented.
+    // We cannot use the empty damage ring for this check, because the ring is only cleared for 'regular'
+    // composited frames. Direct scanout does not clear the ring: the compositor's own render buffers are
+    // not updated during scanout, so the accumulated damage must be kept to prevent corrupted frames
+    // when transitioning from scanout to compositing.
+    bool pending_frame_request = false;
+
+    /**
+     * Check whether a new frame should be produced for the output.
+     */
+    bool should_repaint() const
+    {
+        return force_next_frame || output->needs_frame || pending_frame_request ||
+               (constant_redraw_counter > 0);
+    }
+
+    /**
+     * Notify the damage manager that a new frame is about to be presented.
+     */
+    void frame_started()
+    {
+        force_next_frame = false;
+        pending_frame_request = false;
+    }
+
     /**
      * Start rendering a new frame.
-     * If the operation could not be started, or if a new frame is not needed, the function returns false.
-     * If the operation succeeds, true is returned, and the output (E)GL context is bound.
+     * The caller is responsible for checking that a new frame is needed (should_repaint()).
+     * If the operation could not be started, the function returns null.
+     * If the operation succeeds, a frame object is returned, and the output (E)GL context is bound.
      */
     std::unique_ptr<frame_object_t> start_frame()
     {
         auto buffer_extents = this->get_buffer_extents();
         pixman_region32_intersect_rect(&damage_ring.current, &damage_ring.current,
             buffer_extents.x, buffer_extents.y, buffer_extents.width, buffer_extents.height);
-        const bool needs_swap = force_next_frame | output->needs_frame |
-            pixman_region32_not_empty(&damage_ring.current) | (constant_redraw_counter > 0);
-        force_next_frame = false;
-
-        if (!needs_swap)
-        {
-            return {};
-        }
 
         auto next_frame = std::make_unique<frame_object_t>();
         next_frame->state.committed |= WLR_OUTPUT_STATE_DAMAGE;
@@ -295,6 +317,13 @@ struct swapchain_damage_manager_t
         frame_damage.clear();
         wlr_output_state_set_buffer(&next_frame->state, next_frame->buffer);
         wlr_output_state_set_damage(&next_frame->state, swap_damage.to_pixman());
+        auto release_sync = wo->render->next_explicit_sync_release_point();
+        if (release_sync)
+        {
+            wlr_output_state_set_signal_timeline(
+                &next_frame->state, release_sync.timeline, release_sync.point);
+        }
+
         wlr_buffer_unlock(next_frame->buffer);
 
         if (!wlr_output_test_state(output, &next_frame->state))
@@ -925,6 +954,11 @@ class wf::render_manager::impl
         return get_output_inverse_eotf();
     }
 
+    wlr_drm_syncobj_timeline *render_timeline  = nullptr;
+    wlr_drm_syncobj_timeline *release_timeline = nullptr;
+    uint64_t render_point  = 0;
+    uint64_t release_point = 0;
+
     impl(output_t *o) : output(o), env_allow_scanout(check_scanout_enabled())
     {
         damage_manager = std::make_unique<swapchain_damage_manager_t>(o);
@@ -932,6 +966,21 @@ class wf::render_manager::impl
         postprocessing = std::make_unique<postprocessing_manager_t>(o);
         depth_buffer_manager = std::make_unique<depth_buffer_manager_t>();
         delay_manager = std::make_unique<repaint_delay_manager_t>(o);
+
+        int drm_fd = wlr_backend_get_drm_fd(output->handle->backend);
+        if ((drm_fd >= 0) && output->handle->backend->features.timeline &&
+            output->handle->renderer && output->handle->renderer->features.timeline)
+        {
+            render_timeline  = wlr_drm_syncobj_timeline_create(drm_fd);
+            release_timeline = wlr_drm_syncobj_timeline_create(drm_fd);
+            if (!render_timeline || !release_timeline)
+            {
+                LOGE("Failed to create explicit synchronization timelines for ", output->to_string());
+                wlr_drm_syncobj_timeline_unref(render_timeline);
+                wlr_drm_syncobj_timeline_unref(release_timeline);
+                render_timeline = release_timeline = nullptr;
+            }
+        }
 
         on_frame.set_callback([&] (void*)
         {
@@ -1044,6 +1093,37 @@ class wf::render_manager::impl
     {
         set_icc_transform(nullptr);
         output_inverse_eotf_cache.reset();
+        if (render_timeline)
+        {
+            wlr_drm_syncobj_timeline_signal(render_timeline, UINT64_MAX);
+            wlr_drm_syncobj_timeline_unref(render_timeline);
+        }
+
+        if (release_timeline)
+        {
+            wlr_drm_syncobj_timeline_signal(release_timeline, UINT64_MAX);
+            wlr_drm_syncobj_timeline_unref(release_timeline);
+        }
+    }
+
+    wf::explicit_sync_point_t next_release_point()
+    {
+        if (!release_timeline)
+        {
+            return {};
+        }
+
+        return {release_timeline, ++release_point};
+    }
+
+    wf::explicit_sync_point_t next_render_completion_point()
+    {
+        if (!render_timeline)
+        {
+            return {};
+        }
+
+        return {render_timeline, ++render_point};
     }
 
     const bool env_allow_scanout;
@@ -1182,6 +1262,15 @@ class wf::render_manager::impl
         effects->run_effects(OUTPUT_EFFECT_PRE);
         effects->run_effects(OUTPUT_EFFECT_DAMAGE);
 
+        // Optimization: the output doesn't need a new frame, so we can
+        // just skip the whole repaint
+        if (!damage_manager->should_repaint())
+        {
+            delay_manager->skip_frame();
+            return;
+        }
+
+        damage_manager->frame_started();
         if (do_direct_scanout())
         {
             // Yet another optimization: if we can directly scanout, we should
@@ -1192,8 +1281,6 @@ class wf::render_manager::impl
         auto next_frame = damage_manager->start_frame();
         if (!next_frame)
         {
-            // Optimization: the output doesn't need a new frame (so isn't damaged), so we can
-            // just skip the whole repaint
             delay_manager->skip_frame();
             return;
         }
@@ -1216,6 +1303,10 @@ class wf::render_manager::impl
         {
             LOGE("Failed to submit render pass!");
             wlr_buffer_unlock(next_frame->buffer);
+            unset_bound_output();
+            swap_damage.clear();
+            damage_manager->damage_whole();
+            delay_manager->skip_frame();
             return;
         }
 
@@ -1231,7 +1322,15 @@ class wf::render_manager::impl
 
         /* Part 6: render sw cursors We render software cursors after everything else
          * for consistency with hardware cursor planes */
-        render_sw_cursors(next_frame.get());
+        if (!render_sw_cursors(next_frame.get()))
+        {
+            wlr_buffer_unlock(next_frame->buffer);
+            unset_bound_output();
+            swap_damage.clear();
+            damage_manager->damage_whole();
+            delay_manager->skip_frame();
+            return;
+        }
 
         /* Part 7: finalize frame: swap buffers, send frame_done, etc */
         damage_manager->swap_buffers(std::move(next_frame), swap_damage);
@@ -1241,21 +1340,27 @@ class wf::render_manager::impl
         post_paint();
     }
 
-    void render_sw_cursors(swapchain_damage_manager_t::frame_object_t *next_frame)
+    bool render_sw_cursors(swapchain_damage_manager_t::frame_object_t *next_frame)
     {
-        if (swap_damage.empty())
+        if (swap_damage.empty() && !render_timeline)
         {
-            return;
+            return true;
         }
 
         wlr_buffer_pass_options pass_options{};
         pass_options.color_transform = get_color_transform();
+        if (render_timeline)
+        {
+            pass_options.signal_timeline = render_timeline;
+            pass_options.signal_point    = ++render_point;
+        }
+
         auto *sw_cursor_pass = wlr_renderer_begin_buffer_pass(
             output->handle->renderer, next_frame->buffer, &pass_options);
         if (!sw_cursor_pass)
         {
             LOGE("Failed to render software cursors!");
-            return;
+            return false;
         }
 
         const auto output_tf = get_output_transfer_function();
@@ -1308,7 +1413,9 @@ class wf::render_manager::impl
             opts.src_box = cursor->src_box;
             opts.dst_box = box;
             opts.clip    = cursor_damage.to_pixman();
-            opts.transform = output->handle->transform;
+            opts.transform     = output->handle->transform;
+            opts.wait_timeline = cursor->wait_timeline;
+            opts.wait_point    = cursor->wait_point;
             opts.transfer_function = WLR_COLOR_TRANSFER_FUNCTION_GAMMA22;
             opts.primaries = &srgb_primaries;
             if (luminance_multiplier != 1.0f)
@@ -1319,7 +1426,18 @@ class wf::render_manager::impl
             wlr_render_pass_add_texture(sw_cursor_pass, &opts);
         }
 
-        wlr_render_pass_submit(sw_cursor_pass);
+        if (!wlr_render_pass_submit(sw_cursor_pass))
+        {
+            LOGE("Failed to submit software cursor render pass!");
+            return false;
+        }
+
+        if (render_timeline)
+        {
+            wlr_output_state_set_wait_timeline(&next_frame->state, render_timeline, render_point);
+        }
+
+        return true;
     }
 
     /**
@@ -1448,6 +1566,16 @@ wf::render_target_t render_manager::get_target_framebuffer() const
 void render_manager::set_require_depth_buffer(bool require)
 {
     return pimpl->depth_buffer_manager->set_required(require);
+}
+
+wf::explicit_sync_point_t render_manager::next_explicit_sync_release_point()
+{
+    return pimpl->next_release_point();
+}
+
+wf::explicit_sync_point_t render_manager::next_explicit_sync_render_point()
+{
+    return pimpl->next_render_completion_point();
 }
 
 wf::render_pass_t*render_manager::get_current_pass()

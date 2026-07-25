@@ -30,10 +30,12 @@ wf::scene::surface_state_t& wf::scene::surface_state_t::operator =(surface_state
 
     current_buffer = other.current_buffer;
     texture = other.texture;
+    acquire_point = std::move(other.acquire_point);
     accumulated_damage = other.accumulated_damage;
     opaque_region = other.opaque_region;
-    seq  = other.seq;
-    size = other.size;
+    seq   = other.seq;
+    size  = other.size;
+    scale = other.scale;
     src_viewport = other.src_viewport;
     transform    = other.transform;
     color_transform = other.color_transform;
@@ -50,6 +52,8 @@ wf::scene::surface_state_t& wf::scene::surface_state_t::operator =(surface_state
 
 void wf::scene::surface_state_t::merge_state(wlr_surface *surface)
 {
+    const bool same_commit = seq == surface->current.seq;
+
     // NB: lock the new buffer first, in case it is the same as the old one
     if (surface->buffer)
     {
@@ -61,17 +65,35 @@ void wf::scene::surface_state_t::merge_state(wlr_surface *surface)
         wlr_buffer_unlock(current_buffer);
     }
 
+    acquire_point = {};
+
     if (surface->buffer)
     {
         this->current_buffer = &surface->buffer->base;
         this->texture = surface->buffer->texture;
         this->size    = {surface->current.width, surface->current.height};
+        this->scale   = surface->current.scale;
         this->transform = {surface->current.transform};
+
+        auto sync_state = wlr_linux_drm_syncobj_v1_get_surface_state(surface);
+        if (sync_state)
+        {
+            acquire_point = {sync_state->acquire_timeline, sync_state->acquire_point};
+            const bool new_buffer_commit = !same_commit &&
+                (surface->current.committed & WLR_SURFACE_STATE_BUFFER);
+            if (new_buffer_commit && !wlr_linux_drm_syncobj_v1_state_signal_release_with_buffer(
+                sync_state, current_buffer))
+            {
+                LOGE("Failed to track explicit-sync surface buffer release");
+                wl_resource_post_no_memory(surface->resource);
+            }
+        }
     } else
     {
         this->current_buffer = NULL;
         this->texture = NULL;
         this->size    = {0, 0};
+        this->scale   = 1;
     }
 
     // The wp_color_management_v1 protocol nominally treats surfaces without an image description
@@ -196,6 +218,40 @@ wf::scene::wlr_surface_node_t::wlr_surface_node_t(wlr_surface *surface, bool aut
 
 void wf::scene::wlr_surface_node_t::apply_state(surface_state_t&& state)
 {
+    wf::dimensionsf_t new_size = wf::dimensionsf_t{state.size};
+    static wf::option_wrapper_t<bool> use_native_buffer_size{"workarounds/use_native_buffer_size"};
+
+    // Guess surface size based on the primary output scale.
+    // This is aimed at fixing issues with fractional scaling, where the surface size in logical and
+    // buffer coordinates differ.
+    //
+    // By calculating the floating size in logical coordinates, we can ensure we render aligned with the
+    // underlying pixel grid and avoid blurriness.
+    if (auto primary_output = guess_primary_output();
+        primary_output && state.current_buffer && use_native_buffer_size)
+    {
+        auto vp = state.src_viewport.value_or(wlr_fbox{0, 0,
+            (float)state.current_buffer->width, (float)state.current_buffer->height});
+
+        if (state.transform & WL_OUTPUT_TRANSFORM_90)
+        {
+            std::swap(vp.width, vp.height);
+        }
+
+        const float pixel_aligned_width  = vp.width / primary_output->get_scale();
+        const float pixel_aligned_height = vp.height / primary_output->get_scale();
+
+        if (std::abs(pixel_aligned_width - new_size.width) < 1.0f / primary_output->get_scale())
+        {
+            new_size.width = pixel_aligned_width;
+        }
+
+        if (std::abs(pixel_aligned_height - new_size.height) < 1.0f / primary_output->get_scale())
+        {
+            new_size.height = pixel_aligned_height;
+        }
+    }
+
     const bool size_changed = current_state.size != state.size;
     if (size_changed)
     {
@@ -204,6 +260,9 @@ void wf::scene::wlr_surface_node_t::apply_state(surface_state_t&& state)
     }
 
     this->current_state = std::move(state);
+    this->size_on_primary_output = new_size;
+    this->current_state.opaque_region &= get_render_geometry();
+
     wf::scene::damage_node(this, current_state.accumulated_damage);
     if (size_changed)
     {
@@ -376,14 +435,14 @@ class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public rend
             return;
         }
 
-        data.pass->add_texture(self->to_texture(), data.target, self->get_bounding_box(), data.damage);
+        data.pass->add_texture(self->to_texture(), data.target, self->get_render_geometry(), data.damage);
     }
 
     void presentation_feedback(wf::output_t *output) override
     {
         if (self->surface)
         {
-            wlr_presentation_surface_scanned_out_on_output(self->surface, output->handle);
+            wlr_presentation_surface_textured_on_output(self->surface, output->handle);
         }
     }
 
@@ -401,15 +460,15 @@ class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public rend
 
         // Must have a wlr surface with the correct scale and transform
         auto wlr_surf = self->surface;
-        if ((wlr_surf->current.scale != output->handle->scale) ||
-            (wlr_surf->current.transform != output->handle->transform))
+        if ((self->current_state.scale != output->handle->scale) ||
+            (self->current_state.transform != output->handle->transform))
         {
             return direct_scanout::OCCLUSION;
         }
 
         // Finally, the opaque region must be the full surface.
-        wf::region_t non_opaque = wf::region_t{wf::to_integer_box(output->get_relative_geometry())};
-        non_opaque ^= wf::region_t{&wlr_surf->opaque_region};
+        wf::regionf_t non_opaque{output->get_relative_geometry()};
+        non_opaque ^= self->current_state.opaque_region;
         if (!non_opaque.empty())
         {
             return direct_scanout::OCCLUSION;
@@ -433,11 +492,24 @@ class wf::scene::wlr_surface_node_t::wlr_surface_render_instance_t : public rend
 
         wlr_output_state state;
         wlr_output_state_init(&state);
-        wlr_output_state_set_buffer(&state, &wlr_surf->buffer->base);
-        wlr_presentation_surface_scanned_out_on_output(wlr_surf, output->handle);
-
-        if (wlr_output_commit_state(output->handle, &state))
+        wlr_output_state_set_buffer(&state, self->current_state.current_buffer);
+        if (self->current_state.acquire_point)
         {
+            wlr_output_state_set_wait_timeline(&state,
+                self->current_state.acquire_point.timeline, self->current_state.acquire_point.point);
+        }
+
+        auto release_point = output->render->next_explicit_sync_release_point();
+        if (release_point)
+        {
+            wlr_output_state_set_signal_timeline(
+                &state, release_point.timeline, release_point.point);
+        }
+
+        if (wlr_output_test_state(output->handle, &state) &&
+            wlr_output_commit_state(output->handle, &state))
+        {
+            wlr_presentation_surface_scanned_out_on_output(wlr_surf, output->handle);
             wlr_output_state_finish(&state);
             return direct_scanout::SUCCESS;
         } else
@@ -483,6 +555,11 @@ void wf::scene::wlr_surface_node_t::gen_render_instances(
         std::dynamic_pointer_cast<wlr_surface_node_t>(this->shared_from_this()), damage, output));
 }
 
+wf::geometry_t wf::scene::wlr_surface_node_t::get_render_geometry() const
+{
+    return wf::construct_box({0, 0}, size_on_primary_output);
+}
+
 wf::geometry_t wf::scene::wlr_surface_node_t::get_bounding_box()
 {
     return wf::construct_box({0, 0}, current_state.size);
@@ -493,7 +570,8 @@ wlr_surface*wf::scene::wlr_surface_node_t::get_surface() const
     return this->surface;
 }
 
-std::shared_ptr<wf::texture_t> wf::scene::wlr_surface_node_t::to_texture() const
+std::shared_ptr<wf::texture_t> wf::scene::wlr_surface_node_t::to_texture(
+    wf::dimensionsf_t *out_logical_size) const
 {
     if (this->current_state.current_buffer)
     {
@@ -501,6 +579,12 @@ std::shared_ptr<wf::texture_t> wf::scene::wlr_surface_node_t::to_texture() const
         tex->set_source_box(current_state.src_viewport);
         tex->set_transform(current_state.transform);
         tex->set_color_transform(current_state.color_transform);
+        tex->set_wait_timeline(current_state.acquire_point);
+        if (out_logical_size)
+        {
+            *out_logical_size = size_on_primary_output;
+        }
+
         return tex;
     }
 
@@ -554,20 +638,33 @@ void wf::scene::wlr_surface_node_t::update_pending_outputs()
         }
     }
 
-    if (surface && (visibility.size() > 0))
+    if (auto primary_output = guess_primary_output();primary_output && surface)
     {
-        float max_scale = 1;
-        for (auto x : visibility)
-        {
-            max_scale = std::max(max_scale, x.first->handle->scale);
-        }
-
-        wlr_fractional_scale_v1_notify_scale(surface, max_scale);
-        wlr_surface_set_preferred_buffer_scale(surface, max_scale);
+        wlr_fractional_scale_v1_notify_scale(surface, primary_output->get_scale());
+        wlr_surface_set_preferred_buffer_scale(surface, primary_output->get_scale());
         update_preferred_image_description();
     }
 
     pending_visibility_delta.clear();
+}
+
+wf::output_t*wf::scene::wlr_surface_node_t::guess_primary_output()
+{
+    if (visibility.empty())
+    {
+        return nullptr;
+    }
+
+    wf::output_t *primary = nullptr;
+    for (auto& [wo, _] : visibility)
+    {
+        if (!primary || (wo->handle->scale > primary->handle->scale))
+        {
+            primary = wo;
+        }
+    }
+
+    return primary;
 }
 
 void wf::scene::wlr_surface_node_t::update_preferred_image_description()

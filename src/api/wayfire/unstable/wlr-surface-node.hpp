@@ -17,10 +17,12 @@ struct surface_state_t
     // state is current.
     wlr_buffer *current_buffer = nullptr;
     wlr_texture *texture; // The texture of the wlr_client_buffer
+    wf::explicit_sync_point_t acquire_point;
 
     wf::regionf_t accumulated_damage;
     wf::regionf_t opaque_region;
     wf::dimensions_t size = {0, 0};
+    int32_t scale = 1;
     std::optional<wlr_fbox> src_viewport;
     wl_output_transform transform = WL_OUTPUT_TRANSFORM_NORMAL;
     wf::color_transform_t color_transform;
@@ -68,7 +70,8 @@ class wlr_surface_node_t : public node_t, public zero_copy_texturable_node_t
     void gen_render_instances(std::vector<render_instance_uptr>& instances, damage_callback damage,
         wf::output_t *output) override;
     wf::geometry_t get_bounding_box() override;
-    std::shared_ptr<wf::texture_t> to_texture() const override;
+    std::shared_ptr<wf::texture_t> to_texture(
+        wf::dimensionsf_t *out_logical_size = nullptr) const override;
 
     wlr_surface *get_surface() const;
     virtual void apply_state(surface_state_t&& state);
@@ -98,6 +101,9 @@ class wlr_surface_node_t : public node_t, public zero_copy_texturable_node_t
 
   protected:
     surface_state_t current_state;
+    wf::dimensionsf_t size_on_primary_output = {0, 0};
+    wf::output_t *guess_primary_output();
+    wf::geometry_t get_render_geometry() const;
 };
 }
 }

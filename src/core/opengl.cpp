@@ -364,6 +364,14 @@ glm::mat4 wf::gles::render_target_orthographic_projection(const wf::render_targe
     return gles::render_target_gl_to_framebuffer(target) * ortho;
 }
 
+glm::mat4 wf::gles::render_target_aligned_orthographic_projection(const wf::render_target_t& target)
+{
+    return render_target_gl_to_framebuffer(target) *
+           glm::ortho(0.0f, (float)target.get_size().width, (float)target.get_size().height, 0.0f) *
+           glm::scale(glm::mat4(1.0), glm::vec3(target.scale, target.scale, 1.0)) *
+           glm::translate(glm::mat4(1.0), glm::vec3(-target.geometry.x, -target.geometry.y, 1.0));
+}
+
 glm::mat4 wf::gles::render_target_gl_to_framebuffer(const wf::render_target_t& target)
 {
     if (target.subbuffer)
@@ -402,6 +410,17 @@ void wf::gles::render_target_logic_scissor(const wf::render_target_t& target, co
 {
     wf::gles::scissor_render_buffer(target,
         target.framebuffer_box_from_geometry_box(geometry_from_pixman_box(box)));
+}
+
+void wf::gles::for_each_scissor_rect(const wf::render_target_t& target, const wf::regionf_t& damage,
+    const std::function<void()> & callback)
+{
+    auto buffer_damage = target.framebuffer_region_from_geometry_region(damage);
+    for (const auto& box : buffer_damage)
+    {
+        wf::gles::scissor_render_buffer(target, wlr_box_from_pixman_box(box));
+        callback();
+    }
 }
 
 /* look up the actual values of wl_output_transform enum

@@ -115,6 +115,18 @@ void wf::compositor_core_impl_t::init()
     /* Needed for subsurfaces */
     wlr_subcompositor_create(display);
 
+    int drm_fd = wlr_renderer_get_drm_fd(renderer);
+    if ((drm_fd >= 0) && renderer->features.timeline && backend->features.timeline)
+    {
+        if (!wlr_linux_drm_syncobj_manager_v1_create(display, 1, drm_fd))
+        {
+            LOGE("Failed to create linux-drm-syncobj-v1 manager");
+        }
+    } else
+    {
+        LOGI("Explicit synchronization is not supported by the renderer and backend");
+    }
+
     /* Legacy DRM */
     if (runtime_config.legacy_wl_drm &&
         wlr_renderer_get_texture_formats(renderer, WLR_BUFFER_CAP_DMABUF))
@@ -337,6 +349,7 @@ void wf::compositor_core_impl_t::post_init()
     this->emit(&backend_started_ev);
     this->state = compositor_state_t::START_PLUGINS;
     plugin_mgr  = std::make_unique<wf::plugin_manager_t>();
+    plugin_mgr->start();
     this->bindings->reparse_extensions();
 
     this->state = compositor_state_t::RUNNING;
@@ -891,4 +904,12 @@ wf_runtime_config runtime_config;
 std::shared_ptr<wf::config::option_base_t> wf::detail::load_raw_option(const std::string& name)
 {
     return wf::get_core().config->get_option(name);
+}
+
+void wf::compositor_core_impl_t::reload_plugins()
+{
+    if (plugin_mgr)
+    {
+        plugin_mgr->reload_dynamic_plugins();
+    }
 }

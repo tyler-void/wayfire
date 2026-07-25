@@ -2,6 +2,7 @@
 #include <wayfire/bindings-repository.hpp>
 
 #include "touch.hpp"
+#include "bindings-repository-impl.hpp"
 #include "cursor.hpp"
 #include "input-manager.hpp"
 #include "../core-impl.hpp"
@@ -10,6 +11,11 @@
 #include "wayfire/util.hpp"
 #include "wayfire/output-layout.hpp"
 #include <glm/glm.hpp>
+#include <algorithm>
+#include <array>
+
+static uint32_t find_swipe_edges(wf::touch::point_t point);
+static bool has_edge_swipe_binding(uint32_t edge_directions);
 
 class touch_timer_adapter_t : public wf::touch::timer_interface_t
 {
@@ -241,6 +247,48 @@ void wf::touch_interface_t::update_gestures(const wf::touch::gesture_event_t& ev
     }
 }
 
+bool wf::touch_interface_t::should_consume_touch(
+    const wf::touch::gesture_event_t& event) const
+{
+    for (auto& gesture : this->gestures)
+    {
+        if (gesture->should_consume(this->finger_state, event))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+void wf::touch_interface_t::cancel_client_touches()
+{
+    std::vector<wlr_seat_client*> clients;
+    for (auto& [id, node] : focus)
+    {
+        if (!node)
+        {
+            continue;
+        }
+
+        auto *point = wlr_seat_touch_get_point(seat, id);
+        if (point && point->client &&
+            (std::find(clients.begin(), clients.end(), point->client) == clients.end()))
+        {
+            clients.push_back(point->client);
+        }
+    }
+
+    for (auto *client : clients)
+    {
+        wlr_seat_touch_notify_cancel(seat, client);
+    }
+
+    focus.clear();
+    focus_grab_kind.clear();
+    client_touches_cancelled = true;
+}
+
 void wf::touch_interface_t::handle_touch_down(int32_t id, uint32_t time,
     wf::pointf_t point, input_event_processing_mode_t mode)
 {
@@ -265,7 +313,12 @@ void wf::touch_interface_t::handle_touch_down(int32_t id, uint32_t time,
     };
     finger_state.update(gesture_event);
 
-    if (mode != input_event_processing_mode_t::FULL)
+    if (!client_touches_cancelled && should_consume_touch(gesture_event))
+    {
+        cancel_client_touches();
+    }
+
+    if ((mode != input_event_processing_mode_t::FULL) || client_touches_cancelled)
     {
         update_gestures(gesture_event);
         update_cursor_state();
@@ -298,8 +351,13 @@ void wf::touch_interface_t::handle_touch_motion(int32_t id, uint32_t time,
             .finger = id,
             .pos    = {point.x, point.y}
         };
-        update_gestures(gesture_event);
         finger_state.update(gesture_event);
+        if (!client_touches_cancelled && should_consume_touch(gesture_event))
+        {
+            cancel_client_touches();
+        }
+
+        update_gestures(gesture_event);
     }
 
     auto kind = get_current_grab_kind(id);
@@ -354,8 +412,20 @@ void wf::touch_interface_t::handle_touch_up(int32_t id, uint32_t time,
     update_gestures(gesture_event);
     finger_state.update(gesture_event);
 
+    if (finger_state.fingers.empty())
+    {
+        client_touches_cancelled = false;
+    }
+
     update_cursor_state();
-    set_touch_focus(nullptr, id, time, {lift_off_position.x, lift_off_position.y});
+    if (!client_touches_cancelled)
+    {
+        set_touch_focus(nullptr, id, time, {lift_off_position.x, lift_off_position.y});
+    } else
+    {
+        focus.erase(id);
+        focus_grab_kind.erase(id);
+    }
 }
 
 void wf::touch_interface_t::update_cursor_state()
@@ -366,9 +436,10 @@ void wf::touch_interface_t::update_cursor_state()
 }
 
 // Swipe params
-constexpr static int EDGE_SWIPE_THRESHOLD  = 10;
-constexpr static double MIN_SWIPE_DISTANCE = 30;
-constexpr static double MAX_SWIPE_DISTANCE = 450;
+constexpr static int EDGE_SWIPE_THRESHOLD   = 10;
+constexpr static int MAX_EDGE_SWIPE_FINGERS = 5;
+constexpr static double MIN_SWIPE_DISTANCE  = 30;
+constexpr static double MAX_SWIPE_DISTANCE  = 450;
 constexpr static double SWIPE_INCORRECT_DRAG_TOLERANCE = 150;
 
 // Pinch params
@@ -509,6 +580,40 @@ static uint32_t find_swipe_edges(wf::touch::point_t point)
     return edge_directions;
 }
 
+static bool has_edge_swipe_binding(uint32_t edge_directions)
+{
+    const std::array<uint32_t, 4> directions = {
+        wf::GESTURE_DIRECTION_RIGHT,
+        wf::GESTURE_DIRECTION_LEFT,
+        wf::GESTURE_DIRECTION_UP,
+        wf::GESTURE_DIRECTION_DOWN,
+    };
+
+    for (auto direction : directions)
+    {
+        if (!(edge_directions & direction))
+        {
+            continue;
+        }
+
+        for (int fingers = 1; fingers <= MAX_EDGE_SWIPE_FINGERS; ++fingers)
+        {
+            auto gesture = wf::touchgesture_t{
+                wf::GESTURE_TYPE_EDGE_SWIPE,
+                direction,
+                fingers
+            };
+
+            if (wf::get_core().bindings->priv->has_gesture(gesture))
+            {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
 static uint32_t wf_touch_to_wf_dir(uint32_t touch_dir)
 {
     uint32_t gesture_dir = 0;
@@ -619,12 +724,27 @@ void wf::touch_interface_t::add_default_gestures()
         wf::get_core().bindings->handle_gesture(gesture);
     };
 
+    auto consume_multitouch = [this] (const wf::touch::gesture_state_t& state,
+                                      const wf::touch::gesture_event_t&)
+    {
+        return (int)state.fingers.size() >= gesture_finger_count;
+    };
+
+    auto consume_edge_swipe = [consume_multitouch] (const wf::touch::gesture_state_t& state,
+                                                    const wf::touch::gesture_event_t& event)
+    {
+        return consume_multitouch(state, event) ||
+               ((event.type == wf::touch::EVENT_TYPE_TOUCH_DOWN) &&
+                   (state.fingers.size() == 1) &&
+                   has_edge_swipe_binding(find_swipe_edges(event.pos)));
+    };
+
     this->multiswipe = std::make_unique<gesture_t>(std::move(
-        swipe_actions), ack_swipe);
+        swipe_actions), ack_swipe, [] () {}, consume_multitouch);
     this->edgeswipe = std::make_unique<gesture_t>(std::move(
-        edge_swipe_actions), ack_edge_swipe);
+        edge_swipe_actions), ack_edge_swipe, [] () {}, consume_edge_swipe);
     this->multipinch = std::make_unique<gesture_t>(std::move(
-        pinch_actions), ack_pinch);
+        pinch_actions), ack_pinch, [] () {}, consume_multitouch);
     this->add_touch_gesture(this->multiswipe);
     this->add_touch_gesture(this->edgeswipe);
     this->add_touch_gesture(this->multipinch);

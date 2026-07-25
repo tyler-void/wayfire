@@ -3,7 +3,6 @@
 #include "wayfire/dassert.hpp"
 #include "wayfire/nonstd/reverse.hpp"
 #include "wayfire/opengl.hpp"
-#include "wayfire/output.hpp"
 #include <wayfire/scene-render.hpp>
 #include <cmath>
 #include <drm_fourcc.h>
@@ -15,6 +14,50 @@
  */
 constexpr float SDR_REFERENCE_WHITE_NITS = 203.0f;
 constexpr float PQ_MAX_NITS = 10000.0f;
+
+wf::explicit_sync_point_t::explicit_sync_point_t(
+    wlr_drm_syncobj_timeline *timeline, uint64_t point) :
+    timeline(timeline ? wlr_drm_syncobj_timeline_ref(timeline) : nullptr), point(point)
+{}
+
+wf::explicit_sync_point_t::explicit_sync_point_t(const explicit_sync_point_t& other) :
+    explicit_sync_point_t(other.timeline, other.point)
+{}
+
+wf::explicit_sync_point_t::explicit_sync_point_t(explicit_sync_point_t&& other)
+{
+    *this = std::move(other);
+}
+
+wf::explicit_sync_point_t& wf::explicit_sync_point_t::operator =(const explicit_sync_point_t& other)
+{
+    if (this != &other)
+    {
+        explicit_sync_point_t copy{other};
+        *this = std::move(copy);
+    }
+
+    return *this;
+}
+
+wf::explicit_sync_point_t& wf::explicit_sync_point_t::operator =(explicit_sync_point_t&& other)
+{
+    if (this != &other)
+    {
+        wlr_drm_syncobj_timeline_unref(timeline);
+        timeline = other.timeline;
+        point    = other.point;
+        other.timeline = nullptr;
+        other.point    = 0;
+    }
+
+    return *this;
+}
+
+wf::explicit_sync_point_t::~explicit_sync_point_t()
+{
+    wlr_drm_syncobj_timeline_unref(timeline);
+}
 
 static bool is_hdr_transfer_function(wlr_color_transfer_function tf)
 {
@@ -142,6 +185,16 @@ wf::color_transform_t wf::texture_t::get_color_transform() const
 void wf::texture_t::set_color_transform(const wf::color_transform_t& ct)
 {
     color_transform = ct;
+}
+
+const wf::explicit_sync_point_t& wf::texture_t::get_wait_timeline() const
+{
+    return wait_point;
+}
+
+void wf::texture_t::set_wait_timeline(const explicit_sync_point_t& point)
+{
+    wait_point = point;
 }
 
 std::shared_ptr<wf::texture_t> wf::texture_t::from_buffer(wlr_buffer *buffer, wlr_texture *texture)
@@ -274,6 +327,31 @@ static const wlr_drm_format *choose_format_from_set(const wlr_drm_format_set *se
 }
 
 /**
+ * Account for small errors introduced while projecting geometry through
+ * wlr_fbox without changing the global containing_box() contract.
+ */
+static constexpr double framebuffer_rounding_epsilon = 1e-2;
+
+static int floor_framebuffer_coordinate(double value)
+{
+    return std::floor(value + framebuffer_rounding_epsilon);
+}
+
+static int ceil_framebuffer_coordinate(double value)
+{
+    return std::ceil(value - framebuffer_rounding_epsilon);
+}
+
+static wlr_box containing_framebuffer_box(const wf::geometry_t& box)
+{
+    int x1 = floor_framebuffer_coordinate(box.x);
+    int y1 = floor_framebuffer_coordinate(box.y);
+    int x2 = ceil_framebuffer_coordinate(box.x + box.width);
+    int y2 = ceil_framebuffer_coordinate(box.y + box.height);
+    return {x1, y1, x2 - x1, y2 - y1};
+}
+
+/**
  * Rasterize a projected destination box for texture rendering.
  *
  * wlroots render passes only accept integer destination boxes. For exact
@@ -284,15 +362,15 @@ static const wlr_drm_format *choose_format_from_set(const wlr_drm_format_set *se
  */
 static wlr_box round_fbox_to_texture_dst_box(wf::geometry_t fbox)
 {
-    static constexpr double epsilon = 1e-6;
-    const int x = (int)std::floor(fbox.x);
-    const int y = (int)std::floor(fbox.y);
+    static constexpr double size_epsilon = 1e-6;
+    const int x = floor_framebuffer_coordinate(fbox.x);
+    const int y = floor_framebuffer_coordinate(fbox.y);
     const double rounded_width  = std::round(fbox.width);
     const double rounded_height = std::round(fbox.height);
-    const int x2 = (int)((std::abs(fbox.width - rounded_width) < epsilon) ?
-        (x + rounded_width) : std::ceil(fbox.x + fbox.width));
-    const int y2 = (int)((std::abs(fbox.height - rounded_height) < epsilon) ?
-        (y + rounded_height) : std::ceil(fbox.y + fbox.height));
+    const int x2 = (int)((std::abs(fbox.width - rounded_width) < size_epsilon) ?
+        (x + rounded_width) : ceil_framebuffer_coordinate(fbox.x + fbox.width));
+    const int y2 = (int)((std::abs(fbox.height - rounded_height) < size_epsilon) ?
+        (y + rounded_height) : ceil_framebuffer_coordinate(fbox.y + fbox.height));
 
     return wlr_box{
         .x     = x,
@@ -422,7 +500,11 @@ wf::dimensions_t wf::auxilliary_buffer_t::get_size() const
 
 wlr_texture*wf::auxilliary_buffer_t::get_texture()
 {
-    wf::dassert(buffer.get_buffer(), "No buffer allocated yet!");
+    if (!buffer.get_buffer())
+    {
+        return nullptr;
+    }
+
     if (!texture)
     {
         texture = wlr_texture_from_buffer(wf::get_core().renderer, buffer.get_buffer());
@@ -631,7 +713,7 @@ wf::geometry_t wf::render_target_t::framebuffer_geometry_from_geometry_box(wf::g
 
 wlr_box wf::render_target_t::framebuffer_box_from_geometry_box(wf::geometry_t box) const
 {
-    return containing_box(framebuffer_geometry_from_geometry_box(box));
+    return containing_framebuffer_box(framebuffer_geometry_from_geometry_box(box));
 }
 
 wlr_box wf::render_target_t::framebuffer_texture_dst_box_from_geometry_box(wf::geometry_t box) const
@@ -649,12 +731,13 @@ wf::region_t wf::render_target_t::framebuffer_region_from_geometry_region(const 
     wf::region_t result;
     for (const auto& rect : region)
     {
-        result |= containing_box(framebuffer_geometry_from_geometry_box({
+        auto box = framebuffer_geometry_from_geometry_box({
             rect.x1,
             rect.y1,
             rect.x2 - rect.x1,
             rect.y2 - rect.y1,
-        }));
+        });
+        result |= containing_framebuffer_box(box);
     }
 
     return result;
@@ -841,6 +924,9 @@ void wf::render_pass_t::add_texture(const std::shared_ptr<wf::texture_t>& textur
     opts.clip    = fb_damage.to_pixman();
     opts.src_box = texture->get_source_box().value_or(wlr_fbox{0, 0, 0, 0});
     opts.dst_box = adjusted_target.framebuffer_texture_dst_box_from_geometry_box(geometry);
+    const auto& wait_point = texture->get_wait_timeline();
+    opts.wait_timeline = wait_point.timeline;
+    opts.wait_point    = wait_point.point;
 
     auto ct = texture->get_color_transform();
     wlr_color_primaries primaries{};

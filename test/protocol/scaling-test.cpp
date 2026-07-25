@@ -74,12 +74,16 @@ TEST_CASE("fractional-scale render stays pixel-aligned away from origin")
     const int buffer_width = 10;
     const int buffer_height = 10;
 
+    const uint32_t red = 0xff0000ffu;
+    const uint32_t green = 0x00ff00ffu;
+    const uint32_t background = 0x000000ffu;
+
     std::vector<uint32_t> pixels(buffer_width * buffer_height);
     for (int y = 0; y < buffer_height; ++y)
     {
         for (int x = 0; x < buffer_width; ++x)
         {
-            pixels[y * buffer_width + x] = ((x + y) % 2) ? 0x00ff0000u : 0x0000ff00u;
+            pixels[y * buffer_width + x] = ((x + y) % 2) ? green : red;
         }
     }
 
@@ -104,9 +108,10 @@ TEST_CASE("fractional-scale render stays pixel-aligned away from origin")
     int max_y = -1;
     int mixed_pixels = 0;
 
-    const uint32_t red = 0xff0000ffu;
-    const uint32_t green = 0xff00ff00u;
-    const uint32_t background = 0xff000000u;
+    const auto is_background = [] (uint32_t pixel)
+    {
+        return (pixel & 0xffffff00u) == 0;
+    };
 
     INFO("unique pixel count: ", unique_pixels.size());
     for (auto pixel : unique_pixels)
@@ -129,7 +134,7 @@ TEST_CASE("fractional-scale render stays pixel-aligned away from origin")
                 max_y = std::max(max_y, y);
             }
 
-            if ((pixel != background) && (pixel != red) && (pixel != green))
+            if (!is_background(pixel) && (pixel != red) && (pixel != green))
             {
                 mixed_pixels++;
             }
