@@ -37,4 +37,7 @@ _Scratchpad for future features and experiments._
 - **In-tree plugins** under `plugins/<name>/` build with the compositor (no out-of-tree ABI drift).
 - **Design decisions** are recorded as ADRs in [`docs/adr/`](docs/adr/).
 - **Specs & contracts** live in [`specs/`](specs/) (a lightweight spec-driven workflow).
+- **Staying current with upstream:** [`docs/SYNCING-UPSTREAM.md`](docs/SYNCING-UPSTREAM.md) — the
+  merge runbook, including the date-stamped plugin ABI that requires rebuilding
+  `wayfire-plugins-extra` in lockstep, and how to verify no plugin was left stale.
 - Kept curated on top of upstream `master`; not intended to be merged upstream as-is.
