@@ -429,7 +429,10 @@ bool output_state_t::operator ==(const output_state_t& other) const
     if (source == OUTPUT_IMAGE_SOURCE_MIRROR)
     {
         return other.source == OUTPUT_IMAGE_SOURCE_MIRROR &&
-               mirror_from == other.mirror_from;
+               mirror_from == other.mirror_from &&
+               (mode.width == other.mode.width) &&
+               (mode.height == other.mode.height) &&
+               (mode.refresh == other.mode.refresh);
     }
 
     bool eq = true;
@@ -758,7 +761,11 @@ struct output_layout_output_t
 
           case output_config::MODE_MIRROR:
             state.source = OUTPUT_IMAGE_SOURCE_MIRROR;
-            state.mode   = select_default_mode(output_config::MODE_AUTO);
+            tmp.width    = mode.get_width();
+            tmp.height   = mode.get_height();
+            tmp.refresh  = mode.get_refresh();
+            state.mode   = ((tmp.width > 0) && is_mode_supported(tmp)) ?
+                tmp : select_default_mode(output_config::MODE_AUTO);
             state.mirror_from = mode.get_mirror_from();
             break;
         }
@@ -1031,12 +1038,8 @@ struct output_layout_output_t
     void render_output(wlr_texture *texture)
     {
         // TODO: use render-manager's functions, apply gamma, use our normal pass functions.
-        auto render_point = output->render->next_explicit_sync_render_point();
-        wlr_buffer_pass_options pass_options{};
-        pass_options.signal_timeline = render_point.timeline;
-        pass_options.signal_point    = render_point.point;
         struct wlr_render_pass *pass = wlr_output_begin_render_pass(
-            handle, &pending_state.pending, &pass_options);
+            handle, &pending_state.pending, NULL);
         if (pass == NULL)
         {
             return;
@@ -1060,19 +1063,6 @@ struct output_layout_output_t
         {
             pending_state.reset();
             return;
-        }
-
-        if (render_point)
-        {
-            wlr_output_state_set_wait_timeline(
-                &pending_state.pending, render_point.timeline, render_point.point);
-        }
-
-        auto release_point = output->render->next_explicit_sync_release_point();
-        if (release_point)
-        {
-            wlr_output_state_set_signal_timeline(
-                &pending_state.pending, release_point.timeline, release_point.point);
         }
 
         pending_state.commit(handle);
@@ -1785,7 +1775,9 @@ class output_layout_t::impl
                 LOGC(OUTPUT, "\t  mode: dpms");
             } else if (entry.second.source == OUTPUT_IMAGE_SOURCE_MIRROR)
             {
-                LOGC(OUTPUT, "\t  mode: mirror ", entry.second.mirror_from);
+                LOGC(OUTPUT, "\t  mode: mirror ", entry.second.mirror_from,
+                    " (", entry.second.mode.width, "x", entry.second.mode.height,
+                    "@", entry.second.mode.refresh, ")");
             } else
             {
                 LOGC(OUTPUT, "\t  mode: ",

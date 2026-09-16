@@ -63,6 +63,10 @@ bool view_action_interface_t::execute(const std::string & name,
         {
             _always_on_top();
             return false;
+        } else if (id == "always_on_bottom")
+        {
+            _always_on_bottom();
+            return false;
         }
 
         if ((args.size() < 2) || (wf::is_string(args.at(0)) == false))
@@ -278,6 +282,21 @@ void view_action_interface_t::_always_on_top()
 
     data.view  = _view;
     data.above = true;
+    output->emit(&data);
+}
+
+void view_action_interface_t::_always_on_bottom()
+{
+    wf::wm_actions_set_below_state_signal data;
+
+    auto output = _view->get_output();
+    if (!output)
+    {
+        return;
+    }
+
+    data.view  = _view;
+    data.below = true;
     output->emit(&data);
 }
 
@@ -639,7 +658,7 @@ void view_action_interface_t::_move(int x, int y)
         view_geometry.y = y;
 
         view_geometry = wf::clamp(view_geometry, grid);
-        _view->move(view_geometry.x, view_geometry.y);
+        _set_pending_geometry(view_geometry);
     }
 }
 
@@ -655,8 +674,25 @@ void view_action_interface_t::_resize(int w, int h)
         w = std::clamp(w, 40, (int)dimensions.width);
         h = std::clamp(h, 30, (int)dimensions.height);
 
-        _view->resize(w, h);
+        auto view_geometry = _view->get_pending_geometry();
+        view_geometry.width  = w;
+        view_geometry.height = h;
+        _set_pending_geometry(view_geometry);
     }
+}
+
+void view_action_interface_t::_set_pending_geometry(wf::geometry_t geometry)
+{
+    if (_view->toplevel()->current().mapped)
+    {
+        _view->set_geometry(geometry);
+        return;
+    }
+
+    // The view is not mapped yet, so its map transaction is still being scheduled. Update the
+    // pending state directly instead of scheduling another transaction, so that the geometry is
+    // part of the map transaction itself.
+    _view->toplevel()->pending().geometry = geometry;
 }
 
 void view_action_interface_t::_assign_ws(wf::point_t point)

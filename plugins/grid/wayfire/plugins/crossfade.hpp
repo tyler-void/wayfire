@@ -265,6 +265,13 @@ class grid_animation_t : public wf::custom_data_t
             tx->add_object(view->toplevel());
         };
 
+        // A not mapped view has no geometry on to animate from, just set the desired state in that case.
+        if (!view->is_mapped())
+        {
+            set_state();
+            return destroy();
+        }
+
         if (type != CROSSFADE)
         {
             /* Order is important here: first we set the view geometry, and

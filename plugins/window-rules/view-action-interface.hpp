@@ -26,6 +26,7 @@ class view_action_interface_t : public action_interface_t
     void _unminimize();
     void _make_sticky();
     void _always_on_top();
+    void _always_on_bottom();
 
     std::tuple<bool, float> _expect_float(const std::vector<variant_t> & args,
         std::size_t position);
@@ -50,6 +51,7 @@ class view_action_interface_t : public action_interface_t
     void _start_on_output(std::string output);
     void _move(int x, int y);
     void _resize(int w, int h);
+    void _set_pending_geometry(wf::geometry_t geometry);
 
     void _assign_ws(wf::point_t point);
 

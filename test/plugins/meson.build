@@ -1,4 +1,6 @@
+subdir('common')
 subdir('command')
+subdir('vswitch')
 
 # Pure layout core for spread-overview (constitution Principle I). No libwayfire
 # link — the test #includes the pure layout.cpp directly; only doctest is needed.

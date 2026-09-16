@@ -36,6 +36,8 @@ precision highp float;
 
 @builtin@
 uniform float sat;
+uniform float alpha_threshold;
+uniform float alpha_exponent;
 uniform sampler2D bg_texture;
 
 varying highp vec2 uvpos[2];
@@ -53,7 +55,8 @@ void main()
     vec4 bp = texture2D(bg_texture, uvpos[1]);
     bp = vec4(saturation(bp.rgb, sat), bp.a);
     vec4 wp = get_pixel(uvpos[0]);
-    vec4 c = clamp(4.0 * wp.a, 0.0, 1.0) * bp;
+    float blur_alpha = clamp(wp.a / alpha_threshold, 0.0, 1.0);
+    vec4 c = pow(blur_alpha, alpha_exponent) * bp;
     gl_FragColor = wp + (1.0 - wp.a) * c;
 })";
 
@@ -62,6 +65,8 @@ wf_blur_base::wf_blur_base(std::string name)
     this->algorithm_name = name;
 
     this->saturation_opt.load_option("blur/saturation");
+    this->alpha_threshold_opt.load_option("blur/alpha_threshold");
+    this->alpha_exponent_opt.load_option("blur/alpha_exponent");
     this->offset_opt.load_option("blur/" + algorithm_name + "_offset");
     this->degrade_opt.load_option("blur/" + algorithm_name + "_degrade");
     this->iterations_opt.load_option("blur/" + algorithm_name + "_iterations");
@@ -71,6 +76,8 @@ wf_blur_base::wf_blur_base(std::string name)
         wf::scene::damage_node(wf::get_core().scene(), wf::get_core().scene()->get_bounding_box());
     };
     this->saturation_opt.set_callback(options_changed);
+    this->alpha_threshold_opt.set_callback(options_changed);
+    this->alpha_exponent_opt.set_callback(options_changed);
     this->offset_opt.set_callback(options_changed);
     this->degrade_opt.set_callback(options_changed);
     this->iterations_opt.set_callback(options_changed);
@@ -112,6 +119,11 @@ void wf_blur_base::render_iteration(wf::region_t blur_region,
     wf::gles::bind_render_buffer(out.get_renderbuffer());
     GL_CALL(glActiveTexture(GL_TEXTURE0));
     GL_CALL(glBindTexture(GL_TEXTURE_2D, tex_id));
+
+    // Blur shaders can sample one texel outside the partial render region.
+    // Render a one-pixel guard band so those samples are initialized.
+    blur_region.expand_edges(1);
+    blur_region &= wlr_box{0, 0, width, height};
     for (auto& b : blur_region)
     {
         wf::gles::scissor_render_buffer(out.get_renderbuffer(), wlr_box_from_pixman_box(b));
@@ -273,6 +285,8 @@ void wf_blur_base::render(wf::gles_texture_t src_tex, wf::geometry_t src_box, co
     /* XXX: core should give us the number of texture units used */
     blend_program.uniform1i("bg_texture", 1);
     blend_program.uniform1f("sat", saturation_opt);
+    blend_program.uniform1f("alpha_threshold", alpha_threshold_opt);
+    blend_program.uniform1f("alpha_exponent", alpha_exponent_opt);
 
     blend_program.set_active_texture(src_tex);
     GL_CALL(glActiveTexture(GL_TEXTURE0 + 1));
