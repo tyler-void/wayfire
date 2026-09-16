@@ -71,14 +71,14 @@ Entry, exit, and reflow are driven by `duration` (default `circle` ease-out):
 
 ## Building (in-tree)
 
-Built in-tree against Wayfire **master (0.11-dev)** and installed to `/usr/local`:
+Built in-tree against Wayfire **master (currently 0.12-dev)** and installed to `/usr/local`:
 
 ```sh
 ninja -C build
 sudo ninja -C build install
 ```
 
-The pure `layout()` function is unit-tested with doctest (configure with `-Dtests=true`).
+The pure `layout()` function is unit-tested with doctest (configure with `-Dtests=enabled`, then `meson test -C build`).
 
 ## Design & governance
 

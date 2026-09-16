@@ -12,12 +12,12 @@ A runbook for pulling upstream changes into this fork without silently breaking 
 | Prefix | What | Role |
 |---|---|---|
 | `/usr` | pacman `wayfire 0.10.x`, `wayfire-plugins-extra`, `wf-config 0.10.0` | **TTY fallback. Never touch it.** |
-| `/usr/local` | this repo (0.11-dev) + `~/Documents/Projects/wayfire-plugins-extra` | daily driver |
+| `/usr/local` | this repo (upstream master, 0.12-dev as of 2026-09) + its `wf-config`, + `~/Documents/Projects/wayfire-plugins-extra` | daily driver |
 
 Because both stacks are installed, `pkg-config` will happily resolve to the *wrong* one. Every
 out-of-tree build below must set `PKG_CONFIG_PATH=/usr/local/lib/pkgconfig` so it links against
-0.11.0 rather than the pacman 0.10.0. Omitting it yields a clean build that produces
-unloadable plugins.
+this repo's Wayfire and `wf-config` rather than the pacman 0.10.0. Omitting it yields a clean
+build that produces unloadable plugins.
 
 ## One-time setup
 
@@ -57,6 +57,11 @@ Conflicts are otherwise rare by construction: custom work lives in new directori
 (`plugins/spread-overview/`, `specs/`, `docs/adr/`) and only *appends* to shared files like
 `plugins/meson.build`, which git merges automatically.
 
+The exception is a short shared file where upstream appends **at the same spot**. On the
+2026-09-16 sync `test/plugins/meson.build` conflicted: upstream added `subdir('common')` /
+`subdir('vswitch')` right where the fork's spread-overview layout test is appended. Both sides are
+additive, so the resolution is to keep both — upstream's lines first, the fork's block after.
+
 ### 2. Update submodules
 
 ```sh
@@ -67,6 +72,13 @@ Submodules are recorded as commit *pointers*. A merge moves the pointer but leav
 files stale, so skipping this builds new Wayfire against old `wlroots`/`wf-config` headers.
 
 Note the omitted `--init`: `subprojects/wlroots-vkfx` is intentionally left uninitialized.
+
+**Version bumps move `wf-config` too.** When upstream bumps its own version (e.g. `0.11.0` →
+`0.12.0` in `meson.build`), it also bumps the required `wf-config` range. With
+`use_system_wfconfig=auto`, configure then rejects the previously installed `/usr/local` copy
+("Found 0.11.0 but need >=0.12.0"), falls back to the `subprojects/wf-config` submodule, and
+installs *that* into `/usr/local` in step 3. This is expected, not an error — and it is why step 4
+must follow, since plugins-extra links against `wf-config` as well.
 
 ### 3. Rebuild and install Wayfire
 
@@ -87,8 +99,14 @@ ninja -C build && sudo meson install -C build --no-rebuild
 ```
 
 Use `--wipe` (or `--reconfigure`) so the cached dependency paths are re-resolved against the new
-Wayfire; on a first-time setup, drop it. Optional bundled submodules (`pixdecor`,
-`wayfire-shadows`, `filters`, `focus-request`) are deliberately **not** initialized.
+Wayfire; on a first-time setup, drop it. `--wipe` re-applies the options originally passed on the
+command line, so if an option is ever renamed upstream, drop the build directory instead.
+
+The optional add-ons (`pixdecor`, `wayfire-shadows`, `filters`, `focus-request`) are deliberately
+**off**. Since plugins-extra 0.11.2 they are meson `.wrap` files (fetched from git at configure
+time) behind boolean options named `pixdecor`, `wayfire_shadows`, `filters`, `focus_request` —
+formerly git submodules behind `enable_*` options. All default to `false`, so the reconfigure above
+downloads nothing; passing e.g. `-Dpixdecor=true` would clone that add-on on the next configure.
 
 Deprecation warnings during this build are expected — upstream deprecates APIs that plugins-extra
 has not migrated yet. Only errors matter.

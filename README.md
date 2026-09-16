@@ -45,7 +45,7 @@ The interesting work is under the hood:
 | **Tested pure core** | The layout is a pure, deterministic function unit-tested with doctest; render and hit-test share the same geometry, so what you see is exactly what receives a drop. |
 | **Process** | Spec-driven (`specs/`), decisions captured as ADRs, and a risk-isolation workflow: every increment build-checks, then is verified live from a throwaway TTY before it lands. |
 
-**Stack:** C++17 · Wayfire 0.11-dev · wlroots · Wayland · Cairo · Meson / Ninja.
+**Stack:** C++17 · Wayfire 0.12-dev · wlroots · Wayland · Cairo · Meson / Ninja.
 
 **Read more:** [plugin README](plugins/spread-overview/README.md) ·
 [design decisions (ADRs)](docs/adr/) ·
