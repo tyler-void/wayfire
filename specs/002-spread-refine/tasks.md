@@ -109,25 +109,25 @@ frozen; the thumbnail the user *sees* under the pointer is the one grabbed.
 - [X] T036 [US3] In `plugins/spread-overview/src/render.cpp`, change `start_exit_anim`'s clock source (`:412` `anim_state.try_emplace(v, opt_duration)`) to `opt_exit_duration`
 - [X] T037 [P] [US3] In `metadata/spread-overview.xml`, declare `exit_duration` (`type="animation"`, default `225ms`) and update `duration`'s `_long` at `:16` from "Entry/exit and reflow animation length." to "Entry and reflow animation length (the close uses exit_duration)."
 - [X] T038 [US3] Build, install, run the ABI-stamp check
-- [ ] T039 [US3] 🛑 **tty2 gate** — present quickstart §I4 as a numbered plan (including `exit_duration = 300ms` restoring 001) and **STOP**; wait for the user's result
+- [X] T039 [US3] 🛑 **tty2 gate** — present quickstart §I4 as a numbered plan (including `exit_duration = 300ms` restoring 001) and **STOP**; wait for the user's result
 
 ### I5 — highlight fade (SHOULD; deferrable)
 
 - [X] T040 [US3] Assess splitting the drop-target highlight out of `border_node_t`'s shared cairo texture (`overlay.cpp` `rerender()` `:36-81`, highlight stroke `:69-73`, single upload `:76`) into its own node/texture with an alpha ramp. **If it needs more than that one split**, stop and record the deferral (reason + what it would take) in this file under "Deferred", per FR-011's MAY
 - [X] T041 [US3] Implement the ≈120 ms fixed alpha ramp for the highlight element and make `dim_node_t::set_active`'s bright-cell switch follow the same ramp (research R-110); the constant stays a constant, **not** a new option
 - [X] T042 [US3] Build, install, run the ABI-stamp check
-- [ ] T043 [US3] 🛑 **tty2 gate** — present quickstart §I5 as a numbered plan and **STOP**; wait for the user's result
+- [X] T043 [US3] 🛑 **tty2 gate** — present quickstart §I5 as a numbered plan and **STOP**; wait for the user's result
 
 ---
 
 ## Phase 6 — Polish, regression, housekeeping (I6)
 
 - [X] T044 Run the **full** `meson test -C build` and confirm the ABI-stamp check one final time after a clean `ninja -C build && sudo ninja -C build install`
-- [ ] T045 🛑 **tty2 gate** — re-run all seven 001 acceptance scenarios from `specs/001-spread-overview/quickstart.md` (SC-007), explicitly covering FR-012 (the `inactive-alpha` helper still works; every window's position/size/stacking/opacity is restored exactly on close), and **STOP** for the user's sign-off
+- [X] T045 🛑 **tty2 gate** — re-run all seven 001 acceptance scenarios from `specs/001-spread-overview/quickstart.md` (SC-007), explicitly covering FR-012 (the `inactive-alpha` helper still works; every window's position/size/stacking/opacity is restored exactly on close), and **STOP** for the user's sign-off
 - [X] T046 [P] Update the "Affected artifacts" list in `docs/adr/004-per-window-cluster-scale.md` to the files actually changed, and record whether FR-011 shipped or was deferred
 - [X] T047 [P] Add the refinement to `FEATURES.md` under spread-overview (what changed, the measured effect, links to ADR-004 and `specs/002-spread-refine/`)
 - [X] T048 [P] Update `plugins/spread-overview/README.md`: `small_window_boost` and `exit_duration` in the options tables, and a short note that within-workspace arrangement is row-based with per-window sizing
-- [ ] T049 Final report to the user: files changed per increment, test results, deviations, and what remains (merging is the user's decision; **ask before every push** — the push policy is unchanged)
+- [X] T049 Final report to the user: files changed per increment, test results, deviations, and what remains (merging is the user's decision; **ask before every push** — the push policy is unchanged)
 
 ---
 
