@@ -22,9 +22,9 @@ story from `spec.md`.
 lands, so the amendment goes in *before* the code, not with the I6 housekeeping.
 *(Deviation from brief §F, which put all of §E in I6 — approved by the user in the planning review.)*
 
-- [ ] T001 Amend `.specify/memory/constitution.md` to **v1.3.0 (MINOR)**: Principle I's signature contract (`:55`) gains `natural_pos` and the emphasis option; add a Sync Impact entry at the top recording 1.2.0 → 1.3.0 and its rationale
-- [ ] T002 In `.specify/memory/constitution.md`, refresh every stale build fact, each re-verified in this tree first: `:138-140` (0.11-dev → 0.12-dev; ABI `2026'07'09` → `2026'08'01` per `src/api/wayfire/plugin.hpp:110`), `:145`, `:167-168` (wlroots 0.20.1 → submodule tag 0.20.2; wf-config 0.11.0 → required `>=0.12.0,<0.13.0` per `meson.build:111`, submodule declares 0.12.0), `:173`; **keep** the historical boot-evidence line `:149` and **add** the 2026-09-29 upstream sync as current evidence (built, 35/35 tests, verified on tty2)
-- [ ] T003 [P] Update `docs/API-MAP-verified.md:139` so the layout input reads `{view_id, source_ws, natural_size, natural_pos}`, and add entries for `wf::animation::duration_t(std::shared_ptr<option_t<animation_description_t>>)` (`subprojects/wf-config/include/wayfire/util/duration.hpp:81`) and `simple_animation_t` (same file `:188`), citing this tree only
+- [X] T001 Amend `.specify/memory/constitution.md` to **v1.3.0 (MINOR)**: Principle I's signature contract (`:55`) gains `natural_pos` and the emphasis option; add a Sync Impact entry at the top recording 1.2.0 → 1.3.0 and its rationale
+- [X] T002 In `.specify/memory/constitution.md`, refresh every stale build fact, each re-verified in this tree first: `:138-140` (0.11-dev → 0.12-dev; ABI `2026'07'09` → `2026'08'01` per `src/api/wayfire/plugin.hpp:110`), `:145`, `:167-168` (wlroots 0.20.1 → submodule tag 0.20.2; wf-config 0.11.0 → required `>=0.12.0,<0.13.0` per `meson.build:111`, submodule declares 0.12.0), `:173`; **keep** the historical boot-evidence line `:149` and **add** the 2026-09-29 upstream sync as current evidence (built, 35/35 tests, verified on tty2)
+- [X] T003 [P] Update `docs/API-MAP-verified.md:139` so the layout input reads `{view_id, source_ws, natural_size, natural_pos}`, and add entries for `wf::animation::duration_t(std::shared_ptr<option_t<animation_description_t>>)` (`subprojects/wf-config/include/wayfire/util/duration.hpp:81`) and `simple_animation_t` (same file `:188`), citing this tree only
 
 ---
 
@@ -37,27 +37,27 @@ behaviour changes in this phase.
 
 ### Types
 
-- [ ] T004 In `plugins/spread-overview/src/layout.hpp`, add `struct pointf { double x = 0, y = 0; };` beside `ivec2`/`rectf`/`dimf`; **append** `pointf natural_pos{};` to `layout_input_view` (braces required — without them g++13/clang warn `-Wmissing-field-initializers` on the existing test initializers) and **append** `double small_window_boost = 1.5;` to `layout_options`; change no existing member, order or default (contract §1)
+- [X] T004 In `plugins/spread-overview/src/layout.hpp`, add `struct pointf { double x = 0, y = 0; };` beside `ivec2`/`rectf`/`dimf`; **append** `pointf natural_pos{};` to `layout_input_view` (braces required — without them g++13/clang warn `-Wmissing-field-initializers` on the existing test initializers) and **append** `double small_window_boost = 1.5;` to `layout_options`; change no existing member, order or default (contract §1)
 
 ### Algorithm
 
-- [ ] T005 In `plugins/spread-overview/src/layout.cpp`, implement the row layout of contract §2 as the cluster packer — `b(v)` emphasis with the D3 clamp, `compute_layout(k)` with D1/D2, `scale_space`, `better`, the `choose k` search, and `place` — replacing `pack_cluster`'s sizing while leaving the cluster-region code (invariant #9) untouched; sizes clamped via `W(v)/H(v) = max(1, ·)`, emphasis and centres on raw values
-- [ ] T006 In `plugins/spread-overview/src/layout.cpp`, add the D4 feasibility guard (`s > 0`, row/column spacing fits) plus the "retry with spacing 0" fallback, and set `over_dense` from the **smallest per-window scale** `< min_scale` (contract §3 #10)
+- [X] T005 In `plugins/spread-overview/src/layout.cpp`, implement the row layout of contract §2 as the cluster packer — `b(v)` emphasis with the D3 clamp, `compute_layout(k)` with D1/D2, `scale_space`, `better`, the `choose k` search, and `place` — replacing `pack_cluster`'s sizing while leaving the cluster-region code (invariant #9) untouched; sizes clamped via `W(v)/H(v) = max(1, ·)`, emphasis and centres on raw values
+- [X] T006 In `plugins/spread-overview/src/layout.cpp`, add the D4 feasibility guard (`s > 0`, row/column spacing fits) plus the "retry with spacing 0" fallback, and set `over_dense` from the **smallest per-window scale** `< min_scale` (contract §3 #10)
 
 ### Tests (contract §4)
 
-- [ ] T007 Generate the golden constants: run `python3 specs/002-spread-refine/reference/layout_ref.py --golden /tmp/g.json`, confirm `cmp` against `reference/golden-fixture.json`, and emit the 18 input windows + 54 expected rects (β ∈ {1.0, 1.5, 2.5}) as C++ constants into `test/plugins/spread-overview-layout.cpp` — the test must never parse JSON or invoke Python
-- [ ] T008 Add the golden-parity test (invariant #13, SC-004) to `test/plugins/spread-overview-layout.cpp`: every rect within **0.5 px** at the three β values
-- [ ] T009 Add the SC-002 test to `test/plugins/spread-overview-layout.cpp` using a **test-only** copy of 001's packer named `pack_cluster_001_oracle` — the test TU `#include`s `layout.cpp` directly (`:8`), so reusing the name `pack_cluster` would be a redefinition in the same TU; assert no fixture window shrinks at the three β
-- [ ] T010 [P] Add the three D4 dense repros from `layout_ref.py::dense_repros()` to `test/plugins/spread-overview-layout.cpp` (480×540 region, spacing 40: 1920×1080 + 11×60×60, + 12×60×60, and 85×800×600): positive sizes, no overlap, inside the region
-- [ ] T011 [P] Add the randomized property test to `test/plugins/spread-overview-layout.cpp`: `std::mt19937{11}`, ≥ 2,000 clusters × 3 β, spacing including 0, 1–100 windows, sides down to 1 px → invariants #2, #3, #4, #5, #10 positivity, #11; **must not** assert "smallest ≥ 001" (research R-105)
-- [ ] T012 [P] Add the invariant #12 test (β = 1.0 ⇒ every uncapped window in a row shares one scale) to `test/plugins/spread-overview-layout.cpp`
-- [ ] T013 Add an epsilon-1e-6 comparison helper for the **new** tests in `test/plugins/spread-overview-layout.cpp` (at spacing 0 adjacent rects touch and the existing strict `overlaps()` reports ~1e-12 px false overlaps); leave the existing `overlaps()` and the existing spacing-20 tests untouched
-- [ ] T014 Confirm the existing over-dense test (`test/plugins/spread-overview-layout.cpp:127-144`) still passes unchanged, as contract §4.6 / brief §B require (its 0.0389 min-scale depends on the test's `outer_margin = 20.0`). It is **NORMATIVE that it holds**: if it does not, **STOP and report the evidence** (the new arithmetic, and why) — do not relax, rewrite or delete the assertion
+- [X] T007 Generate the golden constants: run `python3 specs/002-spread-refine/reference/layout_ref.py --golden /tmp/g.json`, confirm `cmp` against `reference/golden-fixture.json`, and emit the 18 input windows + 54 expected rects (β ∈ {1.0, 1.5, 2.5}) as C++ constants into `test/plugins/spread-overview-layout.cpp` — the test must never parse JSON or invoke Python
+- [X] T008 Add the golden-parity test (invariant #13, SC-004) to `test/plugins/spread-overview-layout.cpp`: every rect within **0.5 px** at the three β values
+- [X] T009 Add the SC-002 test to `test/plugins/spread-overview-layout.cpp` using a **test-only** copy of 001's packer named `pack_cluster_001_oracle` — the test TU `#include`s `layout.cpp` directly (`:8`), so reusing the name `pack_cluster` would be a redefinition in the same TU; assert no fixture window shrinks at the three β
+- [X] T010 [P] Add the three D4 dense repros from `layout_ref.py::dense_repros()` to `test/plugins/spread-overview-layout.cpp` (480×540 region, spacing 40: 1920×1080 + 11×60×60, + 12×60×60, and 85×800×600): positive sizes, no overlap, inside the region
+- [X] T011 [P] Add the randomized property test to `test/plugins/spread-overview-layout.cpp`: `std::mt19937{11}`, ≥ 2,000 clusters × 3 β, spacing including 0, 1–100 windows, sides down to 1 px → invariants #2, #3, #4, #5, #10 positivity, #11; **must not** assert "smallest ≥ 001" (research R-105)
+- [X] T012 [P] Add the invariant #12 test (β = 1.0 ⇒ every uncapped window in a row shares one scale) to `test/plugins/spread-overview-layout.cpp`
+- [X] T013 Add an epsilon-1e-6 comparison helper for the **new** tests in `test/plugins/spread-overview-layout.cpp` (at spacing 0 adjacent rects touch and the existing strict `overlaps()` reports ~1e-12 px false overlaps); leave the existing `overlaps()` and the existing spacing-20 tests untouched
+- [X] T014 Confirm the existing over-dense test (`test/plugins/spread-overview-layout.cpp:127-144`) still passes unchanged, as contract §4.6 / brief §B require (its 0.0389 min-scale depends on the test's `outer_margin = 20.0`). It is **NORMATIVE that it holds**: if it does not, **STOP and report the evidence** (the new arithmetic, and why) — do not relax, rewrite or delete the assertion
 
 ### I1 gate
 
-- [ ] T015 Run `ninja -C build`, `meson test -C build "Spread overview layout test"` and the **full** `meson test -C build`; report files changed and full test output. **No install, no tty2** — this increment cannot affect the desktop
+- [X] T015 Run `ninja -C build`, `meson test -C build "Spread overview layout test"` and the **full** `meson test -C build`; report files changed and full test output. **No install, no tty2** — this increment cannot affect the desktop
 
 ---
 

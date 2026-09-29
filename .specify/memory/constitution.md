@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0 → 1.1.1 → 1.2.0
+Version change: 1.0.0 → 1.1.0 → 1.1.1 → 1.2.0 → 1.3.0
 Rationale: 1.1.0 MINOR — two principles added (VII, VIII) and Principle IV materially expanded to
 encode the three recon-surfaced constraints as first-class, inheritable rules. 1.1.1 PATCH —
 corrected the wlroots/wf-config dependency wording (they are meson **subprojects** selected via
@@ -10,9 +10,16 @@ dynamically — "vendored" was imprecise; ldconfig presence is not system-linkin
 stale "master vs wlroots 0.19.3" framing. 1.2.0 MINOR — Principle VIII gains a new obligation:
 out-of-tree plugins (e.g. `wayfire-plugins-extra`: `follow-focus`, `focus-change`) MUST be
 ABI-rebuilt against the master install and reinstalled to `/usr/local` on every master rebuild.
+1.3.0 MINOR (2026-09-29, feature 002-spread-refine) — Principle I's signature contract is
+materially expanded: the layout input gains the window's workspace-local position (`natural_pos`)
+and the options gain the small-window emphasis, because 002 arranges thumbnails by where their
+windows actually sit (ADR-004 supersedes 001 layout invariant #10, which fixed one uniform scale per
+workspace). Principle VIII and Technology Constraints are brought up to date with the facts of this
+tree after the 2026-09-29 upstream sync (0.11-dev → 0.12-dev, ABI 2026'07'09 → 2026'08'01, wlroots
+0.20.1 → 0.20.2, wf-config 0.11.0 → 0.12.0); no obligation in VIII changes, only the stated facts.
 
 Principles (8):
-  I.    Pure, Testable Layout Core
+  I.    Pure, Testable Layout Core                                           [EXPANDED in 1.3.0]
   II.   Thin API-Contact Wrappers
   III.  Incremental, Independently-Verifiable Build-Up
   IV.   Verify-Before-Build — Master Source Is the Sole Signature Authority   [EXPANDED in 1.1.0]
@@ -52,9 +59,12 @@ when the user drags and drops its thumbnail onto that workspace's region.
 The window packing and per-workspace clustering MUST be implemented as a pure function with
 zero dependencies on Wayfire rendering, input, or scene-graph types.
 
-- Signature contract: input = list of `{view_id, source_ws (x,y), natural_size}` + workspace
-  grid dimensions + output logical size + spacing/gap options; output = map
-  `view_id → {target_rect, cluster_id}`.
+- Signature contract: input = list of `{view_id, source_ws (x,y), natural_size, natural_pos}`
+  (`natural_pos` = the window's top-left **inside its own workspace**, which is what lets the
+  arrangement follow the windows' real spatial order) + workspace grid dimensions + output logical
+  size + spacing/gap options + the small-window emphasis (`small_window_boost`); output = map
+  `view_id → {target_rect, cluster_id}`. Added in 1.3.0 for feature 002-spread-refine; see
+  `docs/adr/004-per-window-cluster-scale.md` and `specs/002-spread-refine/contracts/layout.md`.
 - This function MUST be unit-testable in isolation and MUST carry unit tests, because it is the
   only component with genuine design decisions (how to pack windows without overlap, how to map
   a drop coordinate back to a target workspace).
@@ -135,18 +145,21 @@ without a record makes the design untrustworthy. ADRs keep the paper trail hones
 
 ### VIII. Locked Build Target & Preserved Fallback
 
-The plugin is built **in-tree on Wayfire master (0.11-dev, wlroots 0.20.x)**, installed to the
+The plugin is built **in-tree on Wayfire master (0.12-dev, wlroots 0.20.x)**, installed to the
 `/usr/local` prefix, and inherits the master ABI version (`WAYFIRE_API_ABI_VERSION_MACRO =
-2026'07'09`). Consequences that MUST be honored:
+2026'08'01`, `src/api/wayfire/plugin.hpp:110`). The ABI stamp is a **date and moves with upstream**;
+the current value is a fact about this tree, not a constant. Consequences that MUST be honored:
 
 - The in-tree plugin loads **only** into the self-built master compositor at
   `/usr/local/bin/wayfire`. It will be **rejected** by the Arch stable build
   (`/usr/bin/wayfire`, 0.10.1, ABI `2025'08'22`). Therefore the daily-driver compositor is
-  master (0.11-dev).
+  master (0.12-dev).
 - The Arch `wayfire` package (0.10.1) MUST be **kept installed and untouched** as a TTY fallback.
   **Do NOT purge it.** If master fails to start, `/usr/bin/wayfire` remains bootable.
 - Master MUST be confirmed to build **and boot** on the target machine before relying on it (done:
-  headless smoke test on 2026-07-11, commit `8603d187`).
+  headless smoke test on 2026-07-11, commit `8603d187`; re-confirmed after the 2026-09-29 upstream
+  sync to 0.12-dev — built clean, 35/35 meson tests, verified live on a tty2 session, commit
+  `8b519e0b`).
 - **Out-of-tree plugins MUST be ABI-rebuilt against master.** Any plugin not in the Wayfire tree —
   notably `wayfire-plugins-extra` (the daily driver depends on `follow-focus` and `focus-change`) —
   MUST be built against the master install (its `wayfire.pc` under `/usr/local/lib/pkgconfig`) and
@@ -164,8 +177,9 @@ becomes master" the same decision; preserving the 0.10.1 fallback keeps that dec
 
 ## Technology Constraints & Scope
 
-- **Target compositor**: Wayfire **master (0.11-dev)**, built from this checkout, installed to
-  `/usr/local`. **wlroots 0.20.1** and **wf-config 0.11.0** are provided by meson **subprojects**
+- **Target compositor**: Wayfire **master (0.12-dev)**, built from this checkout, installed to
+  `/usr/local`. **wlroots 0.20.2** and **wf-config 0.12.0** (the version each subproject declares;
+  Wayfire requires `wf-config >=0.12.0,<0.13.0`, `meson.build:111`) are provided by meson **subprojects**
   (git submodules under `subprojects/`), selected via `use_system_wlroots=auto` because no matching
   system package is present; they build as **shared** libraries installed to `/usr/local/lib` and
   are linked **dynamically** (their appearance in `ldd`/`ldconfig` is expected, not system-linking).
@@ -210,4 +224,4 @@ lists, and reviews MUST verify compliance with the principles above.
   checkpoint. Complexity that violates a principle MUST be justified against a concrete need or
   removed.
 
-**Version**: 1.2.0 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-07-11
+**Version**: 1.3.0 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-09-29

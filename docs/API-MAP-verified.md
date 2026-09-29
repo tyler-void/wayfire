@@ -136,7 +136,10 @@ Everything above is glue over confirmed APIs. The only genuine algorithm is pack
 ```
 layout(views_with_ws, grid_dims, output_size, opts) -> { view -> target_rect, cluster_id }
 ```
-- Input per view: `{ view_id, source_ws = get_view_main_workspace(v), natural_size = get_geometry() }`.
+- Input per view: `{ view_id, source_ws = get_view_main_workspace(v), natural_size = get_geometry(),
+  natural_pos }` — `natural_pos` (added by 002) is the view's top-left **inside its own workspace**:
+  `get_geometry() − (source_ws − get_current_workspace()) · output_size`, the same basis as
+  `move.cpp:86`. Options additionally carry `small_window_boost`.
 - Group by `source_ws` into clusters arranged on the workspace grid (e.g. 3×3); pack each cluster's
   views unoverlapped (borrow scale's compiz-derived row/col packing, `scale.cpp:920+`, but *per
   cluster* instead of one flat grid).
@@ -176,5 +179,40 @@ spread-overview/
 ```
 
 **Build target (locked):** **in-tree** under `plugins/` on this master checkout — the plugin builds
-with the compositor and inherits the master ABI (`2026'07'09`), so it loads only into the self-built
-`/usr/local/bin/wayfire`. Out-of-tree via `wayfire.pc` is explicitly rejected for v1.
+with the compositor and inherits the master ABI (**`2026'08'01`** since the 2026-09-29 upstream sync;
+`src/api/wayfire/plugin.hpp:110`), so it loads only into the self-built `/usr/local/bin/wayfire`.
+Out-of-tree via `wayfire.pc` is explicitly rejected for v1.
+
+---
+
+## 6. Added for 002-spread-refine (verified 2026-09-29 in this tree @ `8b519e0b`)
+
+**Animation driven by a config option** — used for the second animation option (`exit_duration`) and
+for the per-thumbnail snap-back clock:
+
+- `wf::animation::duration_t(std::shared_ptr<wf::config::option_t<animation_description_t>> length)`
+  — `subprojects/wf-config/include/wayfire/util/duration.hpp:81`.
+- `wf::animation::simple_animation_t(std::shared_ptr<wf::config::option_t<animation_description_t>>)`
+  — same file, `:188`.
+- In-tree precedent: `wf::option_wrapper_t<wf::animation_description_t>` is passed straight to both
+  (`plugins/spread-overview/src/overview.hpp:161` `overlay_fade{opt_duration}`;
+  `render.cpp:412` `anim_state.try_emplace(v, opt_duration)`), so a second option needs no new glue.
+
+**View stacking order** — needed so the overview hit-tests the thumbnail drawn **on top** when live
+rects overlap mid-animation (002 FR-009):
+
+- `wf::wset_view_flags::WSET_SORT_STACKING` — `src/api/wayfire/workspace-set.hpp:43`, documented at
+  `:40-42`: "Sort the resulting array in the same order as the scenegraph nodes… This operation may
+  be slow, so it should not be used on hot paths." Views not attached to the scenegraph are dropped.
+- Implementation: `src/output/workspace-impl.cpp:450-465` — `std::sort` **ascending** on
+  `find_index_in_parent()` under the two nodes' LCA.
+- **Which end is top-most:** `wf::scene::raise_to_front()` erases the child and re-inserts it at
+  `children.begin()` (`src/api/wayfire/scene-operations.hpp:63-79`); `add_front()` likewise inserts
+  at `begin()` (`:35-41`). ⇒ **index 0 is the front**, so `get_views(WSET_SORT_STACKING)` returns
+  **top-most first**; hit-test in that order and take the first match.
+- Usage rule (from the "may be slow" note): capture the order **once per `build_spread()`/`reflow()`**,
+  never per input event. Stacking cannot change during a session — raising is descoped from the
+  overview.
+
+**Delta vs 0.10.1**: none of these three signatures exists in a different form in the Arch 0.10.1
+headers as used here; they are cited from this tree only, per Principle IV.

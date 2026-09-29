@@ -15,12 +15,18 @@ namespace spread
 struct ivec2 { int x = 0, y = 0; };
 struct rectf { double x = 0, y = 0, w = 0, h = 0; };
 struct dimf  { double w = 0, h = 0; };
+struct pointf { double x = 0, y = 0; }; // 002: workspace-local position
 
 struct layout_input_view
 {
     uint32_t id = 0;        // stable id, maps results back to the real view
     ivec2    source_ws;     // from get_view_main_workspace()
     dimf     natural_size;  // the view's real (unscaled) size
+    // 002: the view's top-left INSIDE ITS OWN WORKSPACE (workspace-local). Drives row
+    // membership (by center y) and within-row order (by center x); the id only breaks
+    // ties. Braces are required — without them the 3-member aggregate initializers in
+    // the existing tests warn under -Wmissing-field-initializers.
+    pointf   natural_pos{};
 };
 
 struct layout_options
@@ -30,6 +36,10 @@ struct layout_options
     double outer_margin = 20.0; // margin around the whole overview (px)
     double max_scale    = 1.0;  // hard cap: never upscale beyond this
     double min_scale    = 0.05; // soft target: below this a cluster is "over-dense"
+    // 002: small-window emphasis (beta). The shortest windows are enlarged by up to this
+    // factor relative to full-height ones before packing; 1.0 disables the emphasis.
+    // Values < 1.0 are treated as 1.0.
+    double small_window_boost = 1.5;
 };
 
 struct cluster_out { ivec2 ws; rectf region; bool over_dense = false; };
