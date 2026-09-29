@@ -132,6 +132,10 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<wf::color_t> opt_background{"spread-overview/background"};
     wf::option_wrapper_t<double> opt_inactive_brightness{"spread-overview/inactive_brightness"};
     wf::option_wrapper_t<std::string> opt_wallpaper_path{"spread-overview/wallpaper_path"};
+    // 002 (FR-005): small-window emphasis (beta). The shortest windows are enlarged by up
+    // to this factor relative to full-height ones before packing; 1.0 disables it. Read on
+    // every build_spread(), so it takes effect the next time the overview opens or reflows.
+    wf::option_wrapper_t<double> opt_small_window_boost{"spread-overview/small_window_boost"};
 
     // Per-cluster workspace labels (T016) + the thumbnail border overlay, both in the
     // output OVERLAY layer (above the thumbnails), both torn down the same way in

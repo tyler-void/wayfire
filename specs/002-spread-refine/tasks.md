@@ -67,11 +67,11 @@ behaviour changes in this phase.
 **Independent test**: quickstart §I2 — reference-like scene matches `layout-compare.png` panel 2;
 β = 1.0 and 2.5 visibly differ; 001 behaviour spot-checks clean.
 
-- [ ] T016 [US1] In `plugins/spread-overview/src/render.cpp` (`build_spread`, the input loop at `:52-63`), fill `natural_pos` workspace-locally as `view geometry − (source_ws − current_ws) · output_size`, using the basis already proven in `move.cpp:86`
-- [ ] T017 [P] [US1] In `plugins/spread-overview/src/overview.hpp`, append `wf::option_wrapper_t<double> opt_small_window_boost{"spread-overview/small_window_boost"};` **after the option block that ends at `:134`** (the brief's `:122-126` is a stale range — verified)
-- [ ] T018 [US1] In `plugins/spread-overview/src/render.cpp` (`current_layout_options()`, `:34-41`), pass `small_window_boost` into `layout_options`, clamping values `< 1.0` to `1.0`
-- [ ] T019 [P] [US1] In `metadata/spread-overview.xml`, declare `small_window_boost` (`type="double"`, default `1.5`, `min="1.0"`, `max="4.0"`) with a `_short`/`_long` describing the small-window emphasis
-- [ ] T020 [US1] Build, install (`sudo ninja -C build install`) and run the ABI-stamp check from `docs/SYNCING-UPSTREAM.md` — one `plugins:` value equal to `pluginabi` (expected unchanged at `20260801`, so plugins-extra needs no rebuild)
+- [X] T016 [US1] In `plugins/spread-overview/src/render.cpp` (`build_spread`, the input loop at `:52-63`), fill `natural_pos` workspace-locally as `view geometry − (source_ws − current_ws) · output_size`, using the basis already proven in `move.cpp:86`
+- [X] T017 [P] [US1] In `plugins/spread-overview/src/overview.hpp`, append `wf::option_wrapper_t<double> opt_small_window_boost{"spread-overview/small_window_boost"};` **after the option block that ends at `:134`** (the brief's `:122-126` is a stale range — verified)
+- [X] T018 [US1] In `plugins/spread-overview/src/render.cpp` (`current_layout_options()`, `:34-41`), pass `small_window_boost` into `layout_options`, clamping values `< 1.0` to `1.0`
+- [X] T019 [P] [US1] In `metadata/spread-overview.xml`, declare `small_window_boost` (`type="double"`, default `1.5`, `min="1.0"`, `max="4.0"`) with a `_short`/`_long` describing the small-window emphasis
+- [X] T020 [US1] Build, install (`sudo ninja -C build install`) and run the ABI-stamp check from `docs/SYNCING-UPSTREAM.md` — one `plugins:` value equal to `pluginabi` (expected unchanged at `20260801`, so plugins-extra needs no rebuild)
 - [ ] T021 [US1] 🛑 **tty2 gate** — present quickstart §I2 as a numbered plan (what to do, what to see, what counts as failure, how to roll back) and **STOP**; wait for the user's result before Phase 4
 
 ---

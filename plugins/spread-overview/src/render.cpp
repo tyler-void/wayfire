@@ -37,6 +37,9 @@ layout_options spread_overview_t::current_layout_options()
     o.spacing      = (double)(int)opt_spacing;
     o.cluster_gap  = (double)(int)opt_cluster_gap;
     o.outer_margin = 0.0; // fill the whole output edge-to-edge (expo-style)
+    // 002 (FR-005): small-window emphasis. The layout treats < 1.0 as 1.0 anyway; clamp
+    // here too so the value the layout sees is the value the option means.
+    o.small_window_boost = std::max(1.0, (double)opt_small_window_boost);
     return o;
 }
 
@@ -49,6 +52,14 @@ void spread_overview_t::build_spread(spread_anim anim)
 
     // T011: (view, source_ws, natural_size) -> layout input. Enumeration index is
     // the stable layout id; session_views maps it back to the real view.
+    // 002 (T016): also the view's position INSIDE ITS OWN WORKSPACE. View geometry is
+    // in the current workspace's coordinates, so subtracting the workspace delta times
+    // the output size rebases it onto its own workspace — the same basis move.cpp uses
+    // to place a relocated view (`cell_x = (target_ws.x - cv.x) * W`). The layout reads
+    // it to order rows by vertical position and within a row by horizontal position;
+    // only consistency WITHIN one workspace matters, so straddling/maximized views need
+    // no special case.
+    auto cv = wset->get_current_workspace();
     std::vector<layout_input_view> inputs;
     session_views.clear();
     for (auto& v : all)
@@ -58,7 +69,10 @@ void spread_overview_t::build_spread(spread_anim anim)
         inputs.push_back(layout_input_view{
             (uint32_t)session_views.size(),
             ivec2{ws.x, ws.y},
-            dimf{(double)vg.width, (double)vg.height}});
+            dimf{(double)vg.width, (double)vg.height},
+            pointf{
+                (double)vg.x - (double)(ws.x - cv.x) * (double)og.width,
+                (double)vg.y - (double)(ws.y - cv.y) * (double)og.height}});
         session_views.push_back(v);
     }
 

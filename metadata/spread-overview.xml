@@ -38,6 +38,14 @@
 				<default>0</default>
 				<min>0</min>
 			</option>
+			<option name="small_window_boost" type="double">
+				<_short>Small-window emphasis</_short>
+				<_long>How much the shortest windows are enlarged relative to full-height ones before they are packed into rows. 1.0 packs every window at the same scale; 1.5 (the default) matches GNOME's overview; higher values make small windows more prominent at the cost of the large ones. Takes effect the next time the overview opens or reflows.</_long>
+				<default>1.5</default>
+				<min>1.0</min>
+				<max>4.0</max>
+				<precision>0.1</precision>
+			</option>
 			<option name="show_ws_labels" type="bool">
 				<_short>Show workspace labels</_short>
 				<_long>Draw the workspace number on each cluster. Off by default — the grid + dim veil already convey the workspaces.</_long>
