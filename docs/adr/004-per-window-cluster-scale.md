@@ -69,11 +69,31 @@ produced — add a per-cluster fallback to the 001 packing when its smallest thu
 switch the emphasis to the binding dimension (width or height) of the region.
 
 ## Affected artifacts
-- `plugins/spread-overview/src/layout.hpp`, `layout.cpp` — types (`natural_pos`,
-  `small_window_boost`) and the packing.
-- `plugins/spread-overview/src/render.cpp` — `natural_pos` input, option wiring.
-- `metadata/spread-overview.xml` — `small_window_boost`.
-- `test/plugins/spread-overview-layout.cpp` — golden parity, degenerate cases, randomized properties.
-- `specs/002-spread-refine/contracts/layout.md` — supersedes 001 invariant #10.
-- `.specify/memory/constitution.md` — Principle I signature contract (MINOR).
-- *(Update this list to what was actually built before closing 002.)*
+
+As built (2026-09-29, branch `002-spread-refine`):
+
+- `plugins/spread-overview/src/layout.hpp` — new plain type `pointf`; `natural_pos` appended to
+  `layout_input_view`, `small_window_boost` to `layout_options`. Every pre-existing member kept
+  its position and default, so 001's aggregate initializers still compile.
+- `plugins/spread-overview/src/layout.cpp` — the row layout: emphasis with the D3 clamp,
+  `compute_layout` with D1/D2, `scale_space`, GNOME's scale/space objective, the
+  `_createBestLayout` search, `computeWindowSlots` placement, and the D4 feasibility guard with
+  its zero-spacing fallback. `over_dense` now derives from the smallest **per-window** scale.
+  `cluster_region()` and `hit_test_cluster()` were not touched (invariant #9 intact).
+- `plugins/spread-overview/src/render.cpp` — fills `natural_pos` (view geometry rebased onto its
+  own workspace) and passes `small_window_boost` through.
+- `metadata/spread-overview.xml` — `small_window_boost` (double, 1.5, range 1.0–4.0).
+- `test/plugins/spread-overview-layout.cpp` — golden parity within 0.5 px at β ∈ {1.0, 1.5, 2.5}
+  from generated constants; SC-002 against a test-only `pack_cluster_001_oracle`; the three D4
+  dense repros; a randomized property test (2,100 clusters × 3 β); invariant 12. The eight 001
+  test cases pass unchanged, including the over-dense one.
+- `specs/002-spread-refine/contracts/layout.md` — supersedes 001 invariant #10; adds #11–#13.
+- `.specify/memory/constitution.md` — v1.3.0 (MINOR): Principle I's signature contract gains
+  `natural_pos` and the emphasis option.
+- `docs/API-MAP-verified.md` — layout input line; §6 for the APIs 002 newly depends on.
+
+Delivered alongside this decision but **not** part of it (002's motion work, FR-008…FR-011):
+no-jump press-freeze with a live-rect, top-most-first hit-test; animated snap-back and
+frozen-release return; `exit_duration`; and the drop-target highlight as its own fading overlay
+node. The veil's bright-cell fade is deferred — reason recorded in
+`specs/002-spread-refine/tasks.md` § Deferred.

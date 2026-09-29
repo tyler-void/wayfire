@@ -24,6 +24,28 @@ a stay-open reflow so you can rearrange several windows at once.
 - **Status:** functionally complete — validated against the spec's 7 acceptance scenarios; the
   pure-layout doctest suite passes.
 
+#### 🔎 spread-refine (002) · _legible thumbnails & motion continuity_
+
+A refinement pass on the overview, on top of the shipped feature.
+
+- **Per-window sizing.** A workspace's windows are no longer all shrunk to fit its largest one.
+  Windows are packed into rows of variable width, ordered by where they actually sit, each sized
+  individually, with a configurable emphasis for short windows (`small_window_boost`, default
+  1.5). On the reference scene the smallest thumbnail goes from 64×48 to 157×116 — 3.1× the area —
+  with nothing else shrinking. A port of GNOME Shell's `UnalignedLayoutStrategy` with four
+  documented deviations ([ADR-004](docs/adr/004-per-window-cluster-scale.md)).
+- **Motion continuity.** Pressing a thumbnail mid-animation freezes just that one where it is
+  drawn instead of snapping every thumbnail to its slot; hit-testing and drop resolution read the
+  thumbnail's live on-screen rect in stacking order, so the window you see is the one you grab; a
+  cancelled drop glides back to its slot instead of teleporting.
+- **Close feel.** `exit_duration` (default 225 ms) times the close independently of the open, and
+  the drop-target highlight cross-fades between workspaces over 120 ms.
+- **Proof.** The pure layout matches an executable Python oracle within 0.5 px across 54 golden
+  rectangles, plus ~3.9 M assertions over 2,100 randomized clusters and three degenerate cases.
+- **Docs:** [spec & contracts](specs/002-spread-refine/) ·
+  [ADR-004](docs/adr/004-per-window-cluster-scale.md) ·
+  [the oracle](specs/002-spread-refine/reference/layout_ref.py)
+
 ## Optimizations
 
 _None yet — this section will track performance / behavior tweaks to upstream code._

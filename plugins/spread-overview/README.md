@@ -9,6 +9,16 @@ workspaces at once, and you can **drag a window onto another workspace to reloca
 - **scale** side — each window is an individual, crisp thumbnail (not a shrunk workspace snapshot),
   so windows stay readable and directly draggable.
 
+Inside a workspace, windows are packed into **rows of variable width** and **sized individually**:
+a maximized window no longer dictates the scale of everything sharing its workspace, and short
+windows get an extra nudge (`small_window_boost`) so a volume mixer next to a browser stays
+recognizable. Rows follow the windows' real positions — higher windows land in earlier rows,
+left-to-right order is preserved — so the overview reads as a map of your desktop. The
+arrangement is a port of GNOME Shell's row layout; see
+[ADR-004](../../docs/adr/004-per-window-cluster-scale.md) and the executable reference
+[`layout_ref.py`](../../specs/002-spread-refine/reference/layout_ref.py), which the C++ must match
+within 0.5 px.
+
 ## Usage
 
 | Action | Result |
@@ -33,13 +43,15 @@ Set under `[spread-overview]` in `~/.config/wayfire.ini`. Colors are **`R G B A`
 | Option | Default | Meaning |
 |---|---|---|
 | `toggle` | `<super> KEY_G` | Activator to open/close |
-| `duration` | `300ms` | Entry / exit / reflow animation length + easing |
+| `duration` | `300ms` | Entry / reflow animation length + easing; also the glide back when a drag is cancelled |
+| `exit_duration` | `225ms` | Close animation length (thumbnails + overlay dissolve). Set it to `duration` for a symmetric open/close |
 | `drag_threshold` | `8` | Pointer movement (px) past which a press becomes a drag, not a click |
 
 ### Layout
 | Option | Default | Meaning |
 |---|---|---|
 | `spacing` | `20` | Gap (px) between thumbnails within a workspace cluster |
+| `small_window_boost` | `1.5` | How much the shortest windows are enlarged relative to full-height ones before packing (1.0 = off, max 4.0) |
 | `cluster_gap` | `0` | Gap (px) between workspace regions (`0` = edge-to-edge grid) |
 | `show_ws_labels` | `false` | Draw the workspace number on each cluster |
 | `include_minimized` | `false` | **Stubbed** — parsed but has no effect yet (see research.md R13) |
@@ -61,13 +73,19 @@ fail-soft — a missing/undecodable file just disables the feature. See
 
 ## Animations
 
-Entry, exit, and reflow are driven by `duration` (default `circle` ease-out):
+Entry and reflow are driven by `duration`; the close is driven by `exit_duration` (both default
+`circle` ease-out):
 - **Entry** — thumbnails converge in from each window's real position (off-workspace windows slide
   in from their grid direction).
 - **Reflow** — after a relocate, thumbnails glide from where they were to their new slots.
 - **Exit** — the destination workspace's windows settle back to full size while every other
   workspace's windows fade out in place, and the veil / wallpaper / grid dissolve together (rather
-  than the grid snapping away).
+  than the grid snapping away). Runs on `exit_duration`, shorter than the open by default.
+- **Drag** — pressing a thumbnail while it is still flying in catches it exactly where it is
+  drawn; the others keep going. A cancelled drop glides back to its slot instead of jumping, and
+  the drop-target highlight cross-fades between workspaces over a fixed 120 ms. (The dim veil's
+  bright cell still switches instantly — see
+  [tasks.md § Deferred](../../specs/002-spread-refine/tasks.md).)
 
 ## Building (in-tree)
 
@@ -82,7 +100,10 @@ The pure `layout()` function is unit-tested with doctest (configure with `-Dtest
 
 ## Design & governance
 
-- Implementation plan and contracts: [`specs/001-spread-overview/`](../../specs/001-spread-overview/)
+- Implementation plans and contracts: [`specs/001-spread-overview/`](../../specs/001-spread-overview/)
+  (the original feature) and [`specs/002-spread-refine/`](../../specs/002-spread-refine/) (the
+  layout + motion refinement, whose contract supersedes 001's invariant #10)
 - Architecture decisions: [`docs/adr/`](../../docs/adr/) — ADR-001 (self-managed drag),
-  ADR-002 (wallpaper file-load), ADR-003 (snap-into-workspace).
+  ADR-002 (wallpaper file-load), ADR-003 (snap-into-workspace), ADR-004 (per-window cluster
+  scale).
 - Verified Wayfire API surface: [`docs/API-MAP-verified.md`](../../docs/API-MAP-verified.md)
