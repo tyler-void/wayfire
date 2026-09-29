@@ -94,7 +94,7 @@ frozen; the thumbnail the user *sees* under the pointer is the one grabbed.
 - [X] T031 [P] [US2] In `plugins/spread-overview/src/input.cpp`, extend the existing `LOGI("spread-overview: drag start")` with the press position, the thumbnail's position at press and the pointer displacement, so SC-005's 1-px check is readable from `/tmp/master-log`
 - [X] T032 [US2] Verify view-lifetime safety for the new clocks (Principle VI): confirm `forget_view()` erases `anim_state` entries so a window closing mid-drag, mid-snap-back or mid-frozen-release leaves no dangling state, and that the T026 stacking order is scrubbed too; add the scrub if it is missing
 - [X] T033 [US2] Build, install, run the ABI-stamp check; run `meson test -C build "Spread overview layout test"` to confirm the pure core is untouched
-- [ ] T034 [US2] 🛑 **tty2 gate** — present quickstart §I3 as a numbered plan and **STOP**; wait for the user's result before Phase 5
+- [X] T034 [US2] 🛑 **tty2 gate** — present quickstart §I3 as a numbered plan and **STOP**; wait for the user's result before Phase 5
 
 ---
 
