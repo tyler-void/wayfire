@@ -13,8 +13,14 @@
 			</option>
 			<option name="duration" type="animation">
 				<_short>Animation duration</_short>
-				<_long>Entry/exit and reflow animation length.</_long>
+				<_long>Entry and reflow animation length (the close uses exit_duration). Also drives a cancelled drag's glide back to its place.</_long>
 				<default>300ms</default>
+				<min>0</min>
+			</option>
+			<option name="exit_duration" type="animation">
+				<_short>Close animation duration</_short>
+				<_long>How long closing the overview takes: the thumbnails settling back or fading out, and the veil, wallpaper and grid dissolving with them. Shorter than the opening animation by default, so dismissing feels responsive. Set it equal to duration for symmetric open/close.</_long>
+				<default>225ms</default>
 				<min>0</min>
 			</option>
 			<option name="drag_threshold" type="int">

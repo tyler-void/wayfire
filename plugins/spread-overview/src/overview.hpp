@@ -145,6 +145,13 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // to this factor relative to full-height ones before packing; 1.0 disables it. Read on
     // every build_spread(), so it takes effect the next time the overview opens or reflows.
     wf::option_wrapper_t<double> opt_small_window_boost{"spread-overview/small_window_boost"};
+    // 002 (FR-010): the CLOSE has its own length — both the per-thumbnail settle/fade and the
+    // overlay dissolve read it, so the overview still dissolves as one piece. Default 225ms
+    // (0.75x the 300ms open); setting it equal to `duration` restores 001 exactly. Declared
+    // BEFORE overlay_fade below: members initialize in declaration order, and overlay_fade is
+    // constructed from this option.
+    wf::option_wrapper_t<wf::animation_description_t> opt_exit_duration{
+        "spread-overview/exit_duration"};
 
     // Per-cluster workspace labels (T016) + the thumbnail border overlay, both in the
     // output OVERLAY layer (above the thumbnails), both torn down the same way in
@@ -171,7 +178,7 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // Overlay opacity fade for the exit (A2): the dim veil, wallpaper tiles and grid fade out
     // together with the windows so the overview dissolves as one, instead of the grid snapping
     // away at teardown. Driven by the same `duration`; only runs during an animated close.
-    wf::animation::simple_animation_t overlay_fade{opt_duration};
+    wf::animation::simple_animation_t overlay_fade{opt_exit_duration};
 
     // T028 (Principle VI / FR-013): a window closing mid-session. We listen per-view for unmap;
     // on unmap the dead observer_ptr is scrubbed from every map synchronously (it is non-owning,

@@ -105,10 +105,10 @@ frozen; the thumbnail the user *sees* under the pointer is the one grabbed.
 
 ### I4 — `exit_duration`
 
-- [ ] T035 [P] [US3] In `plugins/spread-overview/src/overview.hpp`, append `wf::option_wrapper_t<wf::animation_description_t> opt_exit_duration{"spread-overview/exit_duration"};` after the option block (ends `:134`) and change `overlay_fade{opt_duration}` (`:161`) to `overlay_fade{opt_exit_duration}` — it only ever runs during an animated close (`:160`)
-- [ ] T036 [US3] In `plugins/spread-overview/src/render.cpp`, change `start_exit_anim`'s clock source (`:412` `anim_state.try_emplace(v, opt_duration)`) to `opt_exit_duration`
-- [ ] T037 [P] [US3] In `metadata/spread-overview.xml`, declare `exit_duration` (`type="animation"`, default `225ms`) and update `duration`'s `_long` at `:16` from "Entry/exit and reflow animation length." to "Entry and reflow animation length (the close uses exit_duration)."
-- [ ] T038 [US3] Build, install, run the ABI-stamp check
+- [X] T035 [P] [US3] In `plugins/spread-overview/src/overview.hpp`, append `wf::option_wrapper_t<wf::animation_description_t> opt_exit_duration{"spread-overview/exit_duration"};` after the option block (ends `:134`) and change `overlay_fade{opt_duration}` (`:161`) to `overlay_fade{opt_exit_duration}` — it only ever runs during an animated close (`:160`)
+- [X] T036 [US3] In `plugins/spread-overview/src/render.cpp`, change `start_exit_anim`'s clock source (`:412` `anim_state.try_emplace(v, opt_duration)`) to `opt_exit_duration`
+- [X] T037 [P] [US3] In `metadata/spread-overview.xml`, declare `exit_duration` (`type="animation"`, default `225ms`) and update `duration`'s `_long` at `:16` from "Entry/exit and reflow animation length." to "Entry and reflow animation length (the close uses exit_duration)."
+- [X] T038 [US3] Build, install, run the ABI-stamp check
 - [ ] T039 [US3] 🛑 **tty2 gate** — present quickstart §I4 as a numbered plan (including `exit_duration = 300ms` restoring 001) and **STOP**; wait for the user's result
 
 ### I5 — highlight fade (SHOULD; deferrable)

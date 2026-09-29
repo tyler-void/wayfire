@@ -447,7 +447,8 @@ void spread_overview_t::start_exit_anim()
             continue;
         }
 
-        auto& a = anim_state.try_emplace(v, opt_duration).first->second;
+        // 002 (FR-010): the close runs on exit_duration, not the entry/reflow duration.
+        auto& a = anim_state.try_emplace(v, opt_exit_duration).first->second;
         auto mw = output->wset()->get_view_main_workspace(v);
         const bool on_destination = (mw.x == cws.x) && (mw.y == cws.y);
 
