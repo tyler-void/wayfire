@@ -91,7 +91,13 @@ bool highlight_node_t::set_highlight(int cluster_index)
 
 void highlight_node_t::set_progress(double p)
 {
-    progress = std::min(1.0, std::max(0.0, p));
+    const double clamped = std::min(1.0, std::max(0.0, p));
+    if (clamped == progress)
+    {
+        return; // nothing moved -> do NOT damage the whole output
+    }
+
+    progress = clamped;
     wf::scene::damage_node(this->shared_from_this(), geometry);
 }
 
