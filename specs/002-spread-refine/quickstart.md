@@ -83,11 +83,21 @@ with window count (invariant #9), or a thumbnail bigger than its real window.
 4. Start a drag during the opening animation and cancel it. **Expect**: it animates to its **final**
    slot, not to the mid-flight spot where it was grabbed. → US2 scenario 3.
 5. Close a dragged window from its application mid-drag. **Expect**: no crash, no ghost. → FR-013.
+6. **Frozen-release check**: `<super>+G`, press a thumbnail while it is still flying in, then release
+   **without** moving past the threshold — once with the pointer **outside** that thumbnail's rect,
+   once **over a different** thumbnail. **Expect**: the pressed thumbnail glides to its slot with the
+   same motion as a cancelled drop; nothing stays parked mid-flight, and no workspace switch or
+   relocation happens. Repeat while dragging slightly and releasing over the same workspace.
+7. **Overlap check**: during the entry animation the thumbnails are still near their real desktop
+   positions, so a maximized window covers its neighbours. Press where two thumbnails overlap.
+   **Expect**: the one **drawn on top** — the one you can actually see — is grabbed, every time.
 **Log check for SC-005**: `grep 'drag start' /tmp/master-log` — the line carries the press position,
 the thumbnail's position at the press, and (at the first motion past the threshold) the pointer
 displacement; the thumbnail's displacement must equal the pointer's within 1 px.
 **Failure**: any visible teleport, a highlight that disagrees with where the drop lands, a
-snap-back that fades the thumbnail out, or a thumbnail that returns to a mid-flight position.
+snap-back that fades the thumbnail out, a thumbnail that returns to a mid-flight position, **a
+thumbnail left parked away from its slot after a release**, or **a press that grabs a thumbnail
+hidden underneath the one you clicked on**.
 
 ### I4 — `exit_duration`
 1. Open and close with defaults. **Expect**: the close is visibly quicker than the open (225 vs

@@ -152,13 +152,55 @@ state — a visible collective jump (FR-009's defect).
    `snapshot_thumb_screen_rects()`. Factor into one helper. When nothing animates, live rect == slot,
    so behaviour is unchanged.
 4. `finalize_entry_anim()` becomes unused → **delete it** rather than leave dead code.
+5. **Every release unfreezes** (added in the planning review). Freezing on press creates a state the
+   old code never had: a thumbnail stopped away from its slot with no clock. Some releases are
+   neither a click, a drag nor a relocate — a sub-threshold release **outside** the pressed
+   thumbnail's rect, or **over a different** thumbnail (`press_view != rel_view`). Those paths
+   (`input.cpp:100-122`) currently do nothing, so the thumbnail would stay frozen mid-flight until
+   the next reflow or close. **Any release that neither relocates nor closes the overview MUST
+   return a thumbnail frozen by that press to its layout slot**, with the same animation as the
+   snap-back (R-108). One shared helper serves both paths so they cannot drift apart.
+6. **Hit-test in stacking order, top-most first** (added in the planning review). Mid-animation the
+   live rects **overlap** — the entry starts each thumbnail at its real desktop position, where a
+   maximized window covers its neighbours. `thumb_at()` iterates `thumb_rects`, a `std::map` keyed
+   by view **pointer**, so "first hit" is an arbitrary map order, not what is drawn on top. That
+   contradicts FR-009's "the thumbnail visibly under the pointer". Candidates MUST be tested
+   top-most first.
 
 **Rationale**: without (3) the press can grab the window whose *slot* is under the cursor rather than
 the thumbnail the user sees, and the drop target/highlight are computed from the wrong point —
-breaking 001 FR-007/FR-008 exactly when the user is most likely to notice.
+breaking 001 FR-007/FR-008 exactly when the user is most likely to notice. (5) and (6) are the two
+states that only become reachable *because* of (1) and (3).
 
 **Alternative rejected**: keep `finalize_entry_anim()` but only for the pressed view — same as (1)
 with more code, and it still teleports the pressed thumbnail to its slot.
+
+---
+
+## R-115 — Stacking order for the hit-test (VERIFIED in this tree, Principle IV)
+
+**Decision**: capture the session's view order **once per `build_spread()` / `reflow()`** via
+`output->wset()->get_views(WSET_SORT_STACKING | …)` and hit-test that order, **taking the first hit
+as the top-most**.
+
+**Verification (master source, this checkout):**
+
+| Fact | Where | Result |
+|---|---|---|
+| `WSET_SORT_STACKING` = "same order as the scenegraph nodes… may be slow, should not be used on hot paths" | `src/api/wayfire/workspace-set.hpp:40-43` | as stated |
+| the sort itself: `std::sort` ascending on `find_index_in_parent(...)` under the LCA | `src/output/workspace-impl.cpp:450-465` | ascending child index |
+| which end is top: `raise_to_front` erases and re-inserts at `children.begin()`; `add_front` also inserts at `begin()` | `src/api/wayfire/scene-operations.hpp:35-41`, `:63-79` | **index 0 = front = top-most** |
+
+⇒ `get_views(WSET_SORT_STACKING)` returns **top-most first**; iterate in order and take the first
+hit. (Assuming the opposite would have silently picked the *bottom* window of every overlap — the
+reason the brief said to verify rather than rely on it.)
+
+**Why cache it**: the flag is documented as slow, and pointer motion is a hot path. Stacking cannot
+change while the overview is open — raising is descoped from the session — so one capture per
+layout build is both correct and cheap. Recorded in `docs/API-MAP-verified.md` (task T026).
+
+**When nothing overlaps** (the steady state, after the entry animation settles) the result is
+identical to today's arbitrary order, so this is a no-op except in exactly the case it fixes.
 
 ---
 

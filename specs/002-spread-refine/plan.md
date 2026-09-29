@@ -102,6 +102,7 @@ golden-tested function.
 | Constitution signature contract; stale facts | `constitution.md:55`; `:138-140`, `:144-146`, `:149`, `:154`, `:163`, `:167-168`, `:173`, `:175` | verified — the stale-fact set is **wider** than the brief's `:167-168` |
 | ABI stamp; wf-config requirement | `src/api/wayfire/plugin.hpp:110`; `meson.build:111` | verified |
 | Animation from an option | `subprojects/wf-config/include/wayfire/util/duration.hpp:81` (`duration_t`), `:188` (`simple_animation_t`) | verified — new API-map entries |
+| Stacking order for the hit-test | `src/api/wayfire/workspace-set.hpp:40-43` (`WSET_SORT_STACKING`, "may be slow"), sort `src/output/workspace-impl.cpp:450-465` (ascending child index), top end `src/api/wayfire/scene-operations.hpp:35-41`, `:63-79` (`add_front`/`raise_to_front` insert at `begin()`) | verified — **index 0 = top-most**; new API-map entry (R-115) |
 | Existing test helpers/cases | `test/plugins/spread-overview-layout.cpp:12-16` (`overlaps`, strict), over-dense `:127-144`, 8 cases | verified |
 
 ## Project Structure
@@ -152,7 +153,7 @@ wrapper edits, which is what keeps Principle II intact.
 |---|---|---|
 | I1 | Constitution 1.3.0; types (`pointf`, `natural_pos`, `small_window_boost`); row layout in `layout.cpp`; all new tests; API-map input line | layout test + **full suite** green; golden parity ≤ 0.5 px; no plugin behaviour change yet |
 | I2 | `render.cpp` fills `natural_pos`; both options read + declared in metadata | build + install + ABI stamp; tty2 gate (quickstart I2) |
-| I3 | Press-freeze, live-rect helper, delete `finalize_entry_anim`, animated snap-back, anim-hook helper | build + install + stamp; tty2 gate (quickstart I3) |
+| I3 | Press-freeze, live-rect helper, top-most-first hit-test (R-115), delete `finalize_entry_anim`, animated snap-back **and frozen-release return** (one shared helper), anim-hook helper | build + install + stamp; tty2 gate (quickstart I3, 7 steps) |
 | I4 | `exit_duration` for thumbnails + overlay dissolve; metadata text | build + install + stamp; tty2 gate (quickstart I4) |
 | I5 | Highlight as its own element + ≈120 ms fade, **or** a recorded deferral | build + install + stamp; tty2 gate (quickstart I5) |
 | I6 | 001 quickstart re-run (SC-007); ADR-004 affected artifacts; FEATURES.md | user sign-off; only then merge/push (user decides) |
