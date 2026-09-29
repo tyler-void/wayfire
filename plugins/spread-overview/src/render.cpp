@@ -209,19 +209,28 @@ void spread_overview_t::build_spread(spread_anim anim)
 
     // T016 workspace borders: one overlay node strokes each cluster region — the
     // expo-style grid separating the workspaces. Same regions hit_test_cluster() uses
-    // for US2 drops (Principle I). US2 highlights one via border_node->set_highlight().
+    // for US2 drops (Principle I). 002: the drop-target highlight is a SEPARATE node on
+    // top (highlight_node_t), so it can cross-fade between cells while this texture, the
+    // static grid, is rendered once per layout.
     {
         std::vector<rectf> cluster_rects;
         for (auto& c : result.clusters)
         {
             cluster_rects.push_back(c.region);
         }
+
         const int bs = std::max(1, (int)opt_border_size);
         const int hs = std::max(1, (int)opt_highlight_size);
+
         border_node = std::make_shared<border_node_t>();
-        border_node->set_content(og, std::move(cluster_rects),
-            bs, (wf::color_t)opt_border_color, hs, (wf::color_t)opt_highlight_color);
+        border_node->set_content(og, cluster_rects, bs, (wf::color_t)opt_border_color);
         wf::scene::add_front(output->node_for_layer(wf::scene::layer::OVERLAY), border_node);
+
+        highlight_node = std::make_shared<highlight_node_t>();
+        highlight_node->set_content(og, std::move(cluster_rects), hs,
+            (wf::color_t)opt_highlight_color);
+        // add_front AFTER the grid -> drawn above it.
+        wf::scene::add_front(output->node_for_layer(wf::scene::layer::OVERLAY), highlight_node);
     }
 
     // Per-workspace dim veil (expo + scale merge). Sits at the BACK of the WORKSPACE layer
@@ -315,6 +324,12 @@ void spread_overview_t::clear_spread()
     label_nodes.clear();
 
     // Border overlay torn down identically to the labels (constraint: restore intact).
+    if (highlight_node)
+    {
+        wf::scene::remove_child(highlight_node);
+        highlight_node.reset();
+    }
+
     if (border_node)
     {
         wf::scene::remove_child(border_node);
@@ -405,8 +420,25 @@ void spread_overview_t::animate_step()
         if (dim_node)       { dim_node->alpha      = oa; }
         if (wallpaper_node) { wallpaper_node->alpha = oa; }
         if (border_node)    { border_node->alpha    = oa; }
+        if (highlight_node) { highlight_node->alpha = oa; }
         output->render->damage_whole();
         any_running = true;
+    }
+
+    // 002 (FR-011): the drop-target highlight cross-fade. Its own fixed ~120 ms clock, so it
+    // is independent of the thumbnail animations and keeps the hook alive on its own while a
+    // drag moves between cells.
+    if (highlight_fade.running())
+    {
+        if (highlight_node)
+        {
+            highlight_node->set_progress((double)highlight_fade);
+        }
+
+        any_running = true;
+    } else if (highlight_node)
+    {
+        highlight_node->set_progress(1.0); // settle: the incoming cell fully in
     }
 
     if (any_running)
@@ -519,6 +551,22 @@ void spread_overview_t::ensure_anim_hook()
     output->render->schedule_redraw();
 }
 
+// 002 (FR-011): point the highlight at a cluster and cross-fade to it. The node keeps the
+// outgoing cell so both are drawn during the ramp; progress is written by animate_step.
+void spread_overview_t::set_drop_highlight(int cluster_index)
+{
+    if (!highlight_node)
+    {
+        return;
+    }
+
+    if (highlight_node->set_highlight(cluster_index))
+    {
+        highlight_fade.animate(0.0, 1.0);
+        ensure_anim_hook();
+    }
+}
+
 // 002 (I3): glide ONE thumbnail from where it is drawn now to its layout slot. Used by the
 // cancelled-drop snap-back (FR-008) and by the release of a thumbnail that a press froze —
 // both must target the SLOT, because after the press-freeze the grab position can be a
@@ -612,7 +660,7 @@ void spread_overview_t::handle_view_unmapped(wayfire_toplevel_view view)
         dragging   = false;
         pressed    = false;
         press_view = nullptr;
-        if (border_node) { border_node->set_highlight(-1); }
+        set_drop_highlight(-1); // fade the drop-target highlight out
         if (dim_node)    { dim_node->set_active(current_ws_index); }
     }
 

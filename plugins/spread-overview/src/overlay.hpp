@@ -61,14 +61,12 @@ class border_node_t : public wf::scene::node_t
 
     // Full content — called on build. `cluster_rects` are the per-workspace regions from
     // layout() (output-local), the same geometry hit_test_cluster() resolves drops to.
+    // 002 (FR-011): the drop-target highlight moved to highlight_node_t below, so this node
+    // is now purely the static grid — it re-renders only when the layout changes, never
+    // while dragging.
     void set_content(wf::geometry_t output_geometry,
         std::vector<rectf> cluster_rects,
-        int border_size, wf::color_t border_color,
-        int highlight_size, wf::color_t highlight_color);
-
-    // US2 hook (dormant this increment): highlight one cluster region (index into
-    // cluster_rects), -1 = none. Re-renders + damages.
-    void set_highlight(int cluster_index);
+        int border_size, wf::color_t border_color);
 
     // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
@@ -78,11 +76,80 @@ class border_node_t : public wf::scene::node_t
 
     wf::geometry_t geometry{0, 0, 0, 0};
     std::vector<rectf> clusters;
-    int border_size = 2, highlight_size = 4;
+    int border_size = 2;
     wf::color_t border_color{0.9, 0.9, 0.9, 1.0};
-    wf::color_t highlight_color{0.3, 0.6, 1.0, 1.0};
-    int highlighted = -1;
     wf::owned_texture_t tex;
+};
+
+// 002 (FR-011): the drop-target highlight, split out of border_node_t so it can FADE.
+// It strokes one cluster with four solid rectangles via render_pass_t::add_rect — no
+// texture at all, so the fade is just the colour's alpha and nothing is re-uploaded per
+// frame. (In 001 the highlight was baked into border_node_t's single cairo texture
+// together with the grid, which is exactly why it could only switch instantly.)
+//
+// Two slots — an outgoing and an incoming cluster — so moving the drag from one workspace
+// to the next CROSS-fades instead of flicking: `progress` runs 0 -> 1, the incoming cell
+// drawn at `progress` and the outgoing one at `1 - progress`. Sits above the grid in the
+// OVERLAY layer; the plugin drives `progress` from a fixed ~120 ms clock.
+class highlight_node_t : public wf::scene::node_t
+{
+    class render_instance_t : public wf::scene::simple_render_instance_t<highlight_node_t>
+    {
+      public:
+        using simple_render_instance_t::simple_render_instance_t;
+
+        void render(const wf::scene::render_instruction_t& data)
+        {
+            // Outgoing first, incoming on top: while they overlap (they never do, being
+            // different cells) the incoming one should win.
+            self->render_cell(data, self->prev_index, 1.0 - self->progress);
+            self->render_cell(data, self->cur_index, self->progress);
+        }
+    };
+
+  public:
+    highlight_node_t() : node_t(false)
+    {}
+
+    void gen_render_instances(std::vector<wf::scene::render_instance_uptr>& instances,
+        wf::scene::damage_callback push_damage, wf::output_t *output) override
+    {
+        instances.push_back(std::make_unique<render_instance_t>(this, push_damage, output));
+    }
+
+    wf::geometry_t get_bounding_box() override
+    {
+        return geometry;
+    }
+
+    std::string stringify() const override
+    {
+        return "spread-overview-highlight";
+    }
+
+    // Same cluster regions as the border/dim/hit-test (Principle I).
+    void set_content(wf::geometry_t output_geometry, std::vector<rectf> cluster_rects,
+        int highlight_size, wf::color_t highlight_color);
+
+    // Point the highlight at another cluster (-1 = none). Returns true when the target
+    // actually changed, i.e. when the caller should (re)start the cross-fade clock.
+    bool set_highlight(int cluster_index);
+
+    // Cross-fade position, 0 -> 1. Written every frame by the plugin's animation tick.
+    void set_progress(double p);
+
+    // Overlay opacity, driven by the exit fade — same as the other overlay nodes.
+    float alpha = 1.0f;
+
+  private:
+    void render_cell(const wf::scene::render_instruction_t& data, int index, double a);
+
+    wf::geometry_t geometry{0, 0, 0, 0};
+    std::vector<rectf> clusters;
+    int size = 4;
+    wf::color_t color{0.3, 0.6, 1.0, 1.0};
+    int cur_index = -1, prev_index = -1;
+    double progress = 1.0;
 };
 
 // Per-workspace dim veil (the "expo + scale" merge). Draws a translucent veil over the

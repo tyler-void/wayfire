@@ -10,26 +10,12 @@ namespace spread
 {
 void border_node_t::set_content(wf::geometry_t og,
     std::vector<rectf> cluster_rects,
-    int bs, wf::color_t bc, int hs, wf::color_t hc)
+    int bs, wf::color_t bc)
 {
-    geometry       = og;
-    clusters       = std::move(cluster_rects);
-    border_size    = std::max(1, bs);
-    border_color   = bc;
-    highlight_size = std::max(1, hs);
-    highlight_color = hc;
-    highlighted    = -1;
-    rerender();
-}
-
-void border_node_t::set_highlight(int cluster_index)
-{
-    if (cluster_index == highlighted)
-    {
-        return;
-    }
-
-    highlighted = cluster_index;
+    geometry     = og;
+    clusters     = std::move(cluster_rects);
+    border_size  = std::max(1, bs);
+    border_color = bc;
     rerender();
 }
 
@@ -58,18 +44,11 @@ void border_node_t::rerender()
     };
 
     // Normal border around every workspace cluster (the expo-style separating grid).
+    // 002: uniformly — the drop-target highlight is highlight_node_t's job now, drawn
+    // above this one, so this texture no longer changes while dragging.
     for (size_t i = 0; i < clusters.size(); i++)
     {
-        if ((int)i != highlighted)
-        {
-            stroke(clusters[i], border_size, border_color);
-        }
-    }
-
-    // The highlighted cluster (US2 drop target) drawn last, in the highlight style.
-    if ((highlighted >= 0) && (highlighted < (int)clusters.size()))
-    {
-        stroke(clusters[highlighted], highlight_size, highlight_color);
+        stroke(clusters[i], border_size, border_color);
     }
 
     cairo_surface_flush(surface);
@@ -78,6 +57,75 @@ void border_node_t::rerender()
     cairo_surface_destroy(surface);
 
     wf::scene::damage_node(this->shared_from_this(), geometry);
+}
+
+/* --------------------------- highlight_node_t ---------------------------- */
+void highlight_node_t::set_content(wf::geometry_t og, std::vector<rectf> cluster_rects,
+    int hs, wf::color_t hc)
+{
+    geometry   = og;
+    clusters   = std::move(cluster_rects);
+    size       = std::max(1, hs);
+    color      = hc;
+    cur_index  = -1;
+    prev_index = -1;
+    progress   = 1.0;
+}
+
+bool highlight_node_t::set_highlight(int cluster_index)
+{
+    if (cluster_index == cur_index)
+    {
+        return false;
+    }
+
+    // The cell we were showing becomes the outgoing one — unless a previous cross-fade is
+    // still mid-flight, in which case it has already been drawn away and keeping it would
+    // leave three cells lit.
+    prev_index = (progress >= 1.0) ? cur_index : -1;
+    cur_index  = cluster_index;
+    progress   = 0.0;
+    wf::scene::damage_node(this->shared_from_this(), geometry);
+    return true;
+}
+
+void highlight_node_t::set_progress(double p)
+{
+    progress = std::min(1.0, std::max(0.0, p));
+    wf::scene::damage_node(this->shared_from_this(), geometry);
+}
+
+void highlight_node_t::render_cell(const wf::scene::render_instruction_t& data,
+    int index, double a)
+{
+    if ((index < 0) || (index >= (int)clusters.size()) || (a <= 0.001) || (alpha <= 0.001f))
+    {
+        return;
+    }
+
+    auto col = color;
+    col.a *= a * alpha; // the cross-fade AND the overview's exit dissolve
+
+    // wf::geometry_t is floating point on 0.12 (upstream "standardize floating-point
+    // rendering helpers"), so the rects stay in double — no rounding needed.
+    const auto& c = clusters[index];
+    const double x = c.x, y = c.y, w = c.w, h = c.h;
+    const double s = std::min((double)size, std::min(w, h) / 2.0);
+
+    // Four strokes INSIDE the cell edges, so the highlight never bleeds into a neighbour
+    // (the grid strokes sit centred on the shared edge; this one must not paint over it).
+    const wf::geometry_t top{x, y, w, s};
+    const wf::geometry_t bottom{x, y + h - s, w, s};
+    const wf::geometry_t left{x, y + s, s, h - 2 * s};
+    const wf::geometry_t right{x + w - s, y + s, s, h - 2 * s};
+
+    for (const auto& box : {top, bottom, left, right})
+    {
+        if ((box.width > 0) && (box.height > 0))
+        {
+            data.pass->add_rect(col, data.target, box, data.damage);
+        }
+    }
 }
 
 /* ------------------------------ dim_node_t ------------------------------- */

@@ -234,9 +234,8 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
     output->render->damage_whole();
 
     // Drop-target highlight: resolve from the dragged thumbnail's CENTER (not the cursor)
-    // so what lights up is exactly what a drop would receive (Principle I). set_highlight
-    // only re-renders on a cluster change, so this is cheap.
-    if (border_node)
+    // so what lights up is exactly what a drop would receive (Principle I). 002: this only
+    // starts a ~120 ms cross-fade when the cell actually changes, so it stays cheap.
     {
         auto center = dragged_thumb_center(local);
         int hl = -1;
@@ -253,11 +252,12 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
             }
         }
 
-        border_node->set_highlight(hl);
+        set_drop_highlight(hl);
 
         // Brighten the drop-target cell as the drag moves over it (expo's focus cue follows
         // the drag), reusing the SAME resolved cluster as the border highlight (Principle
-        // I). Off any cell -> keep the current workspace bright.
+        // I). Off any cell -> keep the current workspace bright. NOTE: this switch is still
+        // instant — see tasks.md "Deferred" for why the veil's bright cell does not fade.
         if (dim_node)
         {
             dim_node->set_active(hl >= 0 ? hl : current_ws_index);
@@ -267,10 +267,7 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
 
 void spread_overview_t::end_drag(wf::pointf_t release_local)
 {
-    if (border_node)
-    {
-        border_node->set_highlight(-1); // clear the drop-target highlight
-    }
+    set_drop_highlight(-1); // fade the drop-target highlight out
 
     // Restore the idle focus cue (current workspace bright). On a real relocate, reflow()
     // rebuilds the veil anyway; on a snap-back this is what un-brightens the drop target.

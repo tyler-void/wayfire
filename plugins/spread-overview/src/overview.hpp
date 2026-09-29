@@ -160,6 +160,11 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // workspace — the veil's bright cell when not dragging (recomputed each build_spread).
     std::vector<std::shared_ptr<simple_text_node_t>> label_nodes;
     std::shared_ptr<border_node_t> border_node;
+    // 002 (FR-011): the drop-target highlight as its own overlay node, above the grid, so it
+    // can cross-fade between workspace cells instead of flicking. Driven by highlight_fade
+    // below — a FIXED ~120 ms, deliberately not an option (the configuration surface stays
+    // small; constitution "Upstreamability").
+    std::shared_ptr<highlight_node_t> highlight_node;
     std::shared_ptr<dim_node_t> dim_node;
     std::shared_ptr<wallpaper_node_t> wallpaper_node; // B2: per-cell wallpaper tile, backmost
     int current_ws_index = -1;
@@ -179,6 +184,11 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // together with the windows so the overview dissolves as one, instead of the grid snapping
     // away at teardown. Driven by the same `duration`; only runs during an animated close.
     wf::animation::simple_animation_t overlay_fade{opt_exit_duration};
+
+    // 002 (FR-011): the highlight cross-fade clock. A literal-valued option, the same way
+    // plugins/common's preview-indication builds its fixed 200 ms animation.
+    static constexpr int HIGHLIGHT_FADE_MS = 120;
+    wf::animation::simple_animation_t highlight_fade{wf::create_option<int>(HIGHLIGHT_FADE_MS)};
 
     // T028 (Principle VI / FR-013): a window closing mid-session. We listen per-view for unmap;
     // on unmap the dead observer_ptr is scrubbed from every map synchronously (it is non-owning,
@@ -250,6 +260,9 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // `duration`. Shared by the cancelled-drop snap-back and by the release of a thumbnail
     // that a press froze — both must land on the SLOT, never on a mid-flight position.
     void animate_thumb_to_slot(wayfire_toplevel_view view);
+    // 002 (FR-011): point the drop-target highlight at a cluster (-1 = none) and start the
+    // cross-fade when it actually changed. The single place input.cpp calls while dragging.
+    void set_drop_highlight(int cluster_index);
     void start_exit_anim(); // A2: animate every thumbnail back to its real position (identity)
 
     // T028: a session view unmapped mid-overview. forget_view scrubs the dead observer_ptr from

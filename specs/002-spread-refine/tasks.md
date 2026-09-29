@@ -113,9 +113,9 @@ frozen; the thumbnail the user *sees* under the pointer is the one grabbed.
 
 ### I5 — highlight fade (SHOULD; deferrable)
 
-- [ ] T040 [US3] Assess splitting the drop-target highlight out of `border_node_t`'s shared cairo texture (`overlay.cpp` `rerender()` `:36-81`, highlight stroke `:69-73`, single upload `:76`) into its own node/texture with an alpha ramp. **If it needs more than that one split**, stop and record the deferral (reason + what it would take) in this file under "Deferred", per FR-011's MAY
-- [ ] T041 [US3] Implement the ≈120 ms fixed alpha ramp for the highlight element and make `dim_node_t::set_active`'s bright-cell switch follow the same ramp (research R-110); the constant stays a constant, **not** a new option
-- [ ] T042 [US3] Build, install, run the ABI-stamp check
+- [X] T040 [US3] Assess splitting the drop-target highlight out of `border_node_t`'s shared cairo texture (`overlay.cpp` `rerender()` `:36-81`, highlight stroke `:69-73`, single upload `:76`) into its own node/texture with an alpha ramp. **If it needs more than that one split**, stop and record the deferral (reason + what it would take) in this file under "Deferred", per FR-011's MAY
+- [X] T041 [US3] Implement the ≈120 ms fixed alpha ramp for the highlight element and make `dim_node_t::set_active`'s bright-cell switch follow the same ramp (research R-110); the constant stays a constant, **not** a new option
+- [X] T042 [US3] Build, install, run the ABI-stamp check
 - [ ] T043 [US3] 🛑 **tty2 gate** — present quickstart §I5 as a numbered plan and **STOP**; wait for the user's result
 
 ---
@@ -175,4 +175,32 @@ own gate; I5 is explicitly deferrable.
 
 ## Deferred
 
-*(Empty. T040 writes here if FR-011 is deferred.)*
+### FR-011, second half only — the dim veil's bright cell still switches instantly
+
+**Shipped**: the drop-target *highlight* fades. It is now `highlight_node_t`, its own overlay
+node above the grid, drawing four solid rects through `render_pass_t::add_rect` with a fixed
+120 ms cross-fade (outgoing cell fades out while the incoming fades in). That was exactly the
+"split one element out" change FR-011 budgets for.
+
+**Deferred**: the matching bright workspace in the dim veil (`dim_node_t::set_active`) still
+changes in one step.
+
+**Why.** `dim_node_t` paints one output-sized cairo texture with a hole punched over the active
+cell, so "fade the bright cell" has no cheap form:
+- animating it as-is means re-rendering and re-uploading a full-output ARGB texture every frame
+  (~19.8 MB at 3440×1440) for 120 ms of fade — on a hybrid Intel/NVIDIA setup that is the kind
+  of per-frame buffer traffic ADR-002 deliberately designed out;
+- cross-fading two such textures double-darkens the overlap, which is visibly wrong (two
+  translucent veils stacked), besides doubling the memory;
+- doing it properly means replacing the texture-with-a-hole with per-cell solid rects plus
+  computed gap/margin strips (alpha compositing cannot subtract, so the gaps between cells must
+  be drawn as their own non-overlapping strips). That is a rewrite of the veil's rendering, not
+  a split — past the threshold this task set.
+
+**Effect in practice**: while dragging, the drop target's *border* eases between cells and the
+cell's *brightness* still snaps. The spec rates FR-011 as SHOULD and explicitly allows this
+deferral with a recorded reason.
+
+**If revisited**: the clean version is per-cell rects for the veil too (the same `add_rect` path
+the highlight now uses), which would also delete the 19.8 MB veil texture entirely — worth doing
+as its own increment, with the gap-strip geometry unit-tested in the pure core.
