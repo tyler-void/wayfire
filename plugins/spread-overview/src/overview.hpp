@@ -115,6 +115,15 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // scale/translate transformer per view; the on-screen (output-local) rect per
     // view for click hit-testing; the captured pre-session "own alpha" per view.
     std::vector<wayfire_toplevel_view> session_views;
+    // 002 (I3/FR-009): the session's views in STACKING order, top-most first, captured once
+    // per build_spread()/reflow(). Mid-animation the thumbnails' live rects overlap (they
+    // start at their real desktop positions, where a maximized window covers its neighbours),
+    // so the hit-test must walk this order instead of an arbitrary map order. Verified in
+    // docs/API-MAP-verified.md §6: WSET_SORT_STACKING sorts ascending by scene child index and
+    // scene::raise_to_front inserts at children.begin(), so index 0 is the front. The flag is
+    // documented as slow — capture per build, never per input event; stacking cannot change
+    // during a session because raising is descoped from the overview.
+    std::vector<wayfire_toplevel_view> hit_order;
     std::map<wayfire_toplevel_view, std::shared_ptr<wf::scene::view_2d_transformer_t>> thumbnails;
     std::map<wayfire_toplevel_view, rectf> thumb_rects;
     std::map<wayfire_toplevel_view, float> saved_alpha; // views that were dimmed pre-session (T015)
@@ -216,12 +225,24 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     void reflow(); // stay-open rebuild after a relocate (FR-010) — animates via REFLOW
 
     // Animation (T027). animate_step ticks the transitions into the transformers each frame;
-    // finalize_entry_anim snaps every thumbnail to its final slot and drops the hook (called on
-    // drag start so the drag-follow never fights the animation). snapshot_thumb_screen_rects
-    // captures each thumbnail's on-screen rect BEFORE a relocate, so reflow can animate from it.
+    // snapshot_thumb_screen_rects captures each thumbnail's on-screen rect BEFORE a relocate,
+    // so reflow can animate from it.
     void animate_step();
-    void finalize_entry_anim();
     void snapshot_thumb_screen_rects();
+
+    // 002 (I3). The thumbnail's CURRENT on-screen (output-local) rect, read straight from its
+    // transformer: center = view center + translation, size = view size * scale. Mid-animation
+    // this is where the thumbnail is DRAWN, which is NOT its layout slot — hit-testing and drop
+    // resolution must use it so "the thumbnail you see is the one you grab" holds (FR-009).
+    // Empty when the view is gone or has no transformer (Principle VI).
+    std::optional<rectf> live_thumb_rect(wayfire_toplevel_view view);
+    // Install the per-frame tick if it is not running, and schedule a redraw. One place, so
+    // the entry/reflow build, the exit animation and the snap-back cannot drift apart.
+    void ensure_anim_hook();
+    // Animate ONE thumbnail from wherever it is drawn now back to its layout slot over
+    // `duration`. Shared by the cancelled-drop snap-back and by the release of a thumbnail
+    // that a press froze — both must land on the SLOT, never on a mid-flight position.
+    void animate_thumb_to_slot(wayfire_toplevel_view view);
     void start_exit_anim(); // A2: animate every thumbnail back to its real position (identity)
 
     // T028: a session view unmapped mid-overview. forget_view scrubs the dead observer_ptr from

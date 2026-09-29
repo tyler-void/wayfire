@@ -48,6 +48,34 @@ void spread_overview_t::build_spread(spread_anim anim)
     auto wset = output->wset();
     auto all  = wset->get_views(wf::WSET_MAPPED_ONLY | wf::WSET_EXCLUDE_MINIMIZED);
     auto grid = wset->get_workspace_grid_size();
+
+    // 002 (T026/FR-009): capture the stacking order ONCE per build — top-most first. The
+    // hit-test walks it so a press during the entry/reflow animation, when the live rects
+    // still overlap, grabs the thumbnail that is drawn on top rather than an arbitrary one.
+    // WSET_SORT_STACKING is documented as slow, so it must never run per input event; the
+    // order cannot change during a session because raising is descoped from the overview.
+    // Any view the sorted query omits (not attached to the scenegraph) is appended at the
+    // back, so membership always matches `all`.
+    hit_order.clear();
+    {
+        auto stacked = wset->get_views(wf::WSET_MAPPED_ONLY | wf::WSET_EXCLUDE_MINIMIZED |
+            wf::WSET_SORT_STACKING);
+        for (auto& v : stacked)
+        {
+            if (std::find(all.begin(), all.end(), v) != all.end())
+            {
+                hit_order.push_back(v);
+            }
+        }
+
+        for (auto& v : all)
+        {
+            if (std::find(hit_order.begin(), hit_order.end(), v) == hit_order.end())
+            {
+                hit_order.push_back(v);
+            }
+        }
+    }
     auto og   = output->get_relative_geometry();
 
     // T011: (view, source_ws, natural_size) -> layout input. Enumeration index is
@@ -260,12 +288,7 @@ void spread_overview_t::build_spread(spread_anim anim)
     // kick a redraw so the clocks advance. animate_step removes the hook once they all settle.
     if ((anim != spread_anim::NONE) && !anim_state.empty())
     {
-        if (!anim_hook_active)
-        {
-            output->render->add_effect(&anim_hook, wf::OUTPUT_EFFECT_PRE);
-            anim_hook_active = true;
-        }
-        output->render->schedule_redraw();
+        ensure_anim_hook();
     }
 
     output->render->damage_whole();
@@ -340,6 +363,7 @@ void spread_overview_t::clear_spread()
     thumb_rects.clear();
     saved_alpha.clear();
     session_views.clear();
+    hit_order.clear();
     current_layout = layout_result{};
     output->render->damage_whole();
 }
@@ -455,44 +479,83 @@ void spread_overview_t::start_exit_anim()
 
     if (!anim_state.empty() || overlay_fade.running())
     {
-        if (!anim_hook_active)
-        {
-            output->render->add_effect(&anim_hook, wf::OUTPUT_EFFECT_PRE);
-            anim_hook_active = true;
-        }
-        output->render->schedule_redraw();
+        ensure_anim_hook();
     }
 }
 
-// Snap every thumbnail straight to its final slot (the transition END) and drop the hook.
-// Called on drag start so the drag-follow reads a stable translation and the per-frame tick
-// never fights the cursor (the entry animation and the drag are sequential, never concurrent).
-void spread_overview_t::finalize_entry_anim()
+// 002 (I3): the thumbnail's live on-screen rect — where it is DRAWN right now, which is its
+// slot only once the animation has settled. The transformer is scale-about-center + translate,
+// so center = view center + translation and size = view size * scale. get_geometry() is in the
+// current viewport's coordinates and the translation was built against it, so the result is
+// output-local — the same space as thumb_rects and hit_test_cluster().
+std::optional<rectf> spread_overview_t::live_thumb_rect(wayfire_toplevel_view view)
+{
+    auto it = thumbnails.find(view);
+    if (!view || !view->is_mapped() || (it == thumbnails.end()))
+    {
+        return {}; // Principle VI
+    }
+
+    auto tr = it->second;
+    auto vg = view->get_geometry();
+    const double w  = vg.width * tr->scale_x;
+    const double h  = vg.height * tr->scale_y;
+    const double cx = (vg.x + vg.width / 2.0) + tr->translation_x;
+    const double cy = (vg.y + vg.height / 2.0) + tr->translation_y;
+    return rectf{cx - w / 2.0, cy - h / 2.0, w, h};
+}
+
+// One place that installs the per-frame tick (build_spread, start_exit_anim and the snap-back
+// all route through it).
+void spread_overview_t::ensure_anim_hook()
 {
     if (!anim_hook_active)
+    {
+        output->render->add_effect(&anim_hook, wf::OUTPUT_EFFECT_PRE);
+        anim_hook_active = true;
+    }
+
+    output->render->schedule_redraw();
+}
+
+// 002 (I3): glide ONE thumbnail from where it is drawn now to its layout slot. Used by the
+// cancelled-drop snap-back (FR-008) and by the release of a thumbnail that a press froze —
+// both must target the SLOT, because after the press-freeze the grab position can be a
+// mid-flight one (spec US2 scenario 3).
+void spread_overview_t::animate_thumb_to_slot(wayfire_toplevel_view view)
+{
+    auto it  = thumbnails.find(view);
+    auto rit = thumb_rects.find(view);
+    if (!view || !view->is_mapped() || (it == thumbnails.end()) || (rit == thumb_rects.end()))
+    {
+        return; // Principle VI
+    }
+
+    auto tr = it->second;
+    auto vg = view->get_geometry();
+    const auto& slot = rit->second;
+    const double s  = slot.w / std::max(1.0, (double)vg.width);
+    const double tx = (slot.x + slot.w / 2.0) - (vg.x + vg.width / 2.0);
+    const double ty = (slot.y + slot.h / 2.0) - (vg.y + vg.height / 2.0);
+
+    // Already there (no animation was running and the drag never moved it) -> nothing to do,
+    // so a plain press/release does not start a pointless clock.
+    if ((std::abs(tr->translation_x - tx) < 0.5) && (std::abs(tr->translation_y - ty) < 0.5) &&
+        (std::abs(tr->scale_x - s) < 1e-4))
     {
         return;
     }
 
-    for (auto& [v, a] : anim_state)
-    {
-        auto it = thumbnails.find(v);
-        if (!v || !v->is_mapped() || (it == thumbnails.end()))
-        {
-            continue;
-        }
-
-        auto tr = it->second;
-        tr->scale_x = (float)a.scale_x.end;
-        tr->scale_y = (float)a.scale_y.end;
-        tr->translation_x = (float)a.translation_x.end;
-        tr->translation_y = (float)a.translation_y.end;
-        tr->alpha = (float)a.alpha.end;
-    }
-
-    output->render->rem_effect(&anim_hook);
-    anim_hook_active = false;
-    output->render->damage_whole();
+    auto& a = anim_state.try_emplace(view, opt_duration).first->second;
+    a.scale_x.set(tr->scale_x, s);
+    a.scale_y.set(tr->scale_y, s);
+    a.translation_x.set(tr->translation_x, tx);
+    a.translation_y.set(tr->translation_y, ty);
+    // MANDATORY: animate_step writes tr->alpha every frame, so a freshly constructed clock
+    // would drive the thumbnail to alpha 0 and fade it out mid-snap-back.
+    a.alpha.set(1.0, 1.0);
+    a.start();
+    ensure_anim_hook();
 }
 
 // Capture each thumbnail's current on-screen (output-local) rect, so a following REFLOW can
@@ -504,17 +567,11 @@ void spread_overview_t::snapshot_thumb_screen_rects()
     reflow_prev_rects.clear();
     for (auto& [v, tr] : thumbnails)
     {
-        if (!v || !v->is_mapped())
+        (void)tr;
+        if (auto r = live_thumb_rect(v)) // same math the hit-test uses (Principle I)
         {
-            continue;
+            reflow_prev_rects[v] = *r;
         }
-
-        auto vg = v->get_geometry();
-        const double w  = vg.width  * tr->scale_x;
-        const double h  = vg.height * tr->scale_y;
-        const double cx = (vg.x + vg.width  / 2.0) + tr->translation_x;
-        const double cy = (vg.y + vg.height / 2.0) + tr->translation_y;
-        reflow_prev_rects[v] = rectf{cx - w / 2.0, cy - h / 2.0, w, h};
     }
 }
 
@@ -535,6 +592,7 @@ void spread_overview_t::forget_view(wayfire_toplevel_view view)
 {
     session_views.erase(
         std::remove(session_views.begin(), session_views.end(), view), session_views.end());
+    hit_order.erase(std::remove(hit_order.begin(), hit_order.end(), view), hit_order.end());
     thumbnails.erase(view);
     thumb_rects.erase(view);
     saved_alpha.erase(view);

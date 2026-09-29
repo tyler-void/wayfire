@@ -21,10 +21,22 @@ namespace spread
 {
 wayfire_toplevel_view spread_overview_t::thumb_at(wf::pointf_t local)
 {
-    for (auto& [v, r] : thumb_rects)
+    // 002 (T027/FR-009): hit-test where the thumbnails actually ARE, walking the captured
+    // stacking order so the TOP-MOST match wins. Mid-animation the live rects overlap (the
+    // entry starts every thumbnail at its real desktop position, where a maximized window
+    // covers its neighbours) and the old code iterated thumb_rects — a pointer-keyed map, so
+    // "first hit" was an arbitrary window, not the one under the user's eyes. Once the
+    // animation settles the live rect equals the slot, so behaviour is unchanged.
+    for (auto& v : hit_order)
     {
-        if ((local.x >= r.x) && (local.x < r.x + r.w) &&
-            (local.y >= r.y) && (local.y < r.y + r.h))
+        auto r = live_thumb_rect(v);
+        if (!r)
+        {
+            continue;
+        }
+
+        if ((local.x >= r->x) && (local.x < r->x + r->w) &&
+            (local.y >= r->y) && (local.y < r->y + r->h))
         {
             return v;
         }
@@ -35,18 +47,16 @@ wayfire_toplevel_view spread_overview_t::thumb_at(wf::pointf_t local)
 
 wf::pointf_t spread_overview_t::dragged_thumb_center(wf::pointf_t cursor_local)
 {
-    auto it = thumb_rects.find(press_view);
-    if (it == thumb_rects.end())
+    // 002 (T027): read the centre straight off the transformer. The drag already wrote the
+    // cursor delta into the translation, so the live centre IS "slot centre + delta" in the
+    // settled case, and stays correct when the drag started mid-flight — where the old
+    // slot-plus-delta arithmetic would have pointed at a cell the thumbnail is not over.
+    if (auto r = live_thumb_rect(press_view))
     {
-        return cursor_local; // no dragged thumbnail (shouldn't happen mid-drag) — fall back
+        return {r->x + r->w / 2.0, r->y + r->h / 2.0};
     }
 
-    // The thumbnail's layout-center plus the drag delta since press == its current
-    // on-screen center (the transformer translation moved it by exactly that delta).
-    const auto& r = it->second;
-    return {
-        r.x + r.w / 2.0 + (cursor_local.x - press_pos.x),
-        r.y + r.h / 2.0 + (cursor_local.y - press_pos.y)};
+    return cursor_local; // no dragged thumbnail (shouldn't happen mid-drag) — fall back
 }
 
 void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& event)
@@ -74,6 +84,16 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
         dragging   = false;
         press_pos  = local;
         press_view = hit;
+
+        // 002 (T025/FR-009): freeze ONLY this thumbnail, exactly where it is drawn. Its
+        // transformer already holds the current interpolated values (animate_step writes
+        // them every frame), so dropping its clock stops it in place with no jump; every
+        // other thumbnail keeps flying to its slot. Nothing is frozen if it was not moving.
+        if (press_view)
+        {
+            anim_state.erase(press_view);
+        }
+
         return;
     }
 
@@ -132,6 +152,16 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
             deactivate();
         }
     }
+    else if (press_view)
+    {
+        // 002 (T029): every other release. A sub-threshold release away from the pressed
+        // thumbnail (over empty space or over a DIFFERENT thumbnail), or a flick that passed
+        // the threshold without ever producing a motion event, relocates nothing and closes
+        // nothing — so a thumbnail frozen by this press would sit parked mid-flight until the
+        // next reflow or close. Return it to its slot with the snap-back motion.
+        LOGI("spread-overview: release without click or drag -> return to slot");
+        animate_thumb_to_slot(press_view);
+    }
 
     press_view = nullptr;
 }
@@ -167,16 +197,22 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
             return;
         }
 
-        // If the entry animation is still running, snap every thumbnail to its final slot
-        // first, so drag_orig_t* below captures a stable translation and the per-frame tick
-        // never fights the drag-follow (T027 A1).
-        finalize_entry_anim();
-
+        // 002 (T030): the pressed thumbnail was already frozen on press, and every other
+        // clock is left alone — so there is nothing to finalize here. (001 called
+        // finalize_entry_anim(), which snapped EVERY thumbnail to its slot at once: the
+        // jump FR-009 is about. That helper is gone.)
         auto tr = thumbnails[press_view];
         drag_orig_tx = tr->translation_x;
         drag_orig_ty = tr->translation_y;
         dragging     = true;
-        LOGI("spread-overview: drag start");
+
+        // SC-005 evidence: press point, the thumbnail's position at the press, and the
+        // pointer displacement so far. The thumbnail's displacement must match the
+        // pointer's within 1 px from here on.
+        auto lr = live_thumb_rect(press_view);
+        LOGI("spread-overview: drag start press=(", press_pos.x, ",", press_pos.y,
+            ") thumb=(", lr ? lr->x : 0.0, ",", lr ? lr->y : 0.0,
+            ") pointer_delta=(", local.x - press_pos.x, ",", local.y - press_pos.y, ")");
     }
 
     // Principle VI: if the dragged view unmapped mid-drag, end cleanly (no crash, no
@@ -268,12 +304,12 @@ void spread_overview_t::end_drag(wf::pointf_t release_local)
     }
     else
     {
-        // Same workspace, or released outside all clusters -> snap back (FR-009).
-        auto tr = thumbnails[press_view];
-        tr->translation_x = (float)drag_orig_tx;
-        tr->translation_y = (float)drag_orig_ty;
-        output->render->damage_whole();
+        // Same workspace, or released outside all clusters -> glide back (002 FR-008; 001
+        // teleported by assigning drag_orig_t*). The target is the layout SLOT, not the grab
+        // position: after the press-freeze the grab can be a mid-flight spot, and the
+        // thumbnail must finish where the layout wants it (spec US2 scenario 3).
         LOGI("spread-overview: drop -> snap back (same ws / outside)");
+        animate_thumb_to_slot(press_view);
     }
 }
 
