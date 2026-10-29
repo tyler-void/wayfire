@@ -49,10 +49,10 @@ would put the tree in violation of its own governance.
 
 ## Phase 3 — Retire the script (J3) · US3
 
-- [ ] K019 [US3] Back up `~/.config/wayfire.ini`, then add `inactive-alpha` to `[core] plugins`, add an `[inactive-alpha]` section with `dim_alpha = 0.85`, and **remove** the `[autostart]` line that launches `inactive-alpha.py` (it applies live — tell the user before saving)
-- [ ] K020 [US3] Mark `docs/ipc-scripts/inactive-alpha.py` superseded in a header comment (what replaced it, when, and that it is kept as reference per FR-012); leave the file otherwise untouched
-- [ ] K021 [P] [US3] Add the plugin to `FEATURES.md` under a new entry: what it does, that it replaced an IPC daemon, and the "any plugin suppresses dimming" design with the bug it removes
-- [ ] K022 [P] [US3] Write `plugins/inactive-alpha/README.md`: the option, the suppression rule, and the two accepted interactions — a manual per-window opacity is overridden at the next focus change, and the overview's own opaque-forcing is unaffected
+- [X] K019 [US3] Back up `~/.config/wayfire.ini`, then add `inactive-alpha` to `[core] plugins`, add an `[inactive-alpha]` section with `dim_alpha = 0.85`, and **remove** the `[autostart]` line that launches `inactive-alpha.py` (it applies live — tell the user before saving)
+- [X] K020 [US3] Mark `docs/ipc-scripts/inactive-alpha.py` superseded in a header comment (what replaced it, when, and that it is kept as reference per FR-012); leave the file otherwise untouched
+- [X] K021 [P] [US3] Add the plugin to `FEATURES.md` under a new entry: what it does, that it replaced an IPC daemon, and the "any plugin suppresses dimming" design with the bug it removes
+- [X] K022 [P] [US3] Write `plugins/inactive-alpha/README.md`: the option, the suppression rule, and the two accepted interactions — a manual per-window opacity is overridden at the next focus change, and the overview's own opaque-forcing is unaffected
 - [ ] K023 🛑 **tty2 gate** — present quickstart §J3 (fresh session, no helper process, SC-005/006/007) and **STOP** for the user's sign-off
 - [ ] K024 Final report: files changed per increment, test output, the `vswitch` observation, and what remains. Merging and pushing are the user's decision — **ask before every push**
 
