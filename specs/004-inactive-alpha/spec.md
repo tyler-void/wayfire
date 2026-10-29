@@ -170,6 +170,10 @@ the configuration starts it.
   at the verification gate, the agreed fallback is a short debounce — ignore suppressions shorter
   than a threshold — rather than reintroducing a list of plugin names, which is the design this
   feature exists to remove.
+  **RESOLVED at the J2 gate (2026-10-30): no flicker observed on workspace switches**, so no
+  debounce is needed and none was added. The risk is kept on record because it is a real property
+  of the design: should a future plugin activate briefly enough to matter, the debounce — never a
+  name list — is the answer.
 - **The existing per-window opacity feature owns the mechanism**: this plugin sets the same opacity
   a user can set by hand, so the last writer wins. A manual value is therefore overridden by the
   next focus change; v1 accepts this.

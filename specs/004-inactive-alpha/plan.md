@@ -117,9 +117,9 @@ focus → nothing) is proven without a compositor, so J2's gate is only about wi
 
 ## Known opens (resolved at implementation, tracked in tasks)
 
-1. **Short activations** (spec Assumptions): `vswitch` activates for workspace-switch animations,
-   so suppression may flicker opacity up and back on every switch. The J2 gate must look for this
-   explicitly. Agreed fallback is a debounce threshold, **never** a plugin-name list.
+1. ~~**Short activations**~~ — **CLOSED at the J2 gate (2026-10-30)**: no flicker observed on
+   workspace switches, so no debounce was implemented. Had it flickered, the fallback was a
+   debounce threshold, **never** a plugin-name list.
 2. **Per-output vs global**: focus is a core signal, activation is per-output. A per-output plugin
    instance is the natural shape, but the interaction on a multi-output setup is unverified
    (single-output machine). Must at least be harmless (spec Edge Cases).

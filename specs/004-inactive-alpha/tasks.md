@@ -43,7 +43,7 @@ would put the tree in violation of its own governance.
 - [X] K015 [US1] Set a change callback on `opt_dim_alpha` → `apply_all()` (FR-002), and implement `fini()`: restore every view in `dimmed` to 1.0, drop its transformer, clear all state (FR-005)
 - [X] K016 [P] [US1] Create `metadata/inactive-alpha.xml` declaring `dim_alpha` (`type="double"`, default `0.85`, `min 0.0`, `max 1.0`, `precision 0.01` — matching the style of the existing `inactive_brightness` option) and install it from `metadata/meson.build`
 - [X] K017 [US1] Build, install (`sudo ninja -C build install`) and run the ABI-stamp check from `docs/SYNCING-UPSTREAM.md` — one `plugins:` value equal to `pluginabi` (expected `20260801`); confirm the new `.so` and XML are installed
-- [ ] K018 🛑 **tty2 gate** — present quickstart §J2 as a numbered plan (including step 8, the `vswitch` flicker risk, and the reminder to `pkill -f inactive-alpha.py` first) and **STOP**; wait for the user's result before Phase 3
+- [X] K018 🛑 **tty2 gate** — present quickstart §J2 as a numbered plan (including step 8, the `vswitch` flicker risk, and the reminder to `pkill -f inactive-alpha.py` first) and **STOP**; wait for the user's result before Phase 3
 
 ---
 

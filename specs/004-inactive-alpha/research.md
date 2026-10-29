@@ -22,6 +22,13 @@ workspace-switch animation, so opacity may rise and fall on every switch. The J2
 this explicitly. **Fallback is a debounce** (ignore suppressions shorter than a threshold), never a
 name list — reintroducing the list would recreate the bug this feature exists to remove.
 
+**Outcome (MEASURED at the J2 gate, 2026-10-30)**: **no flicker** on workspace switches. `vswitch`
+does activate and does suppress, but the transition is not visible in practice — plausibly because
+the switch animation covers it and the re-dim lands inside the same motion. **No debounce
+implemented.** The risk stays documented because it remains a real property of "any plugin
+suppresses": if a future plugin activates briefly enough to matter, the debounce is the answer,
+never a name list.
+
 **Alternative rejected**: filtering by plugin *capability* (only suppress for
 `CAPABILITY_GRAB_INPUT`) would be ideal, but capabilities are not carried by the signal and the
 active-plugin set is private to `output_impl_t` — it would need a core change, which is out of
