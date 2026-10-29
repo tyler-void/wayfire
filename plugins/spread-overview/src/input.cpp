@@ -122,14 +122,34 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
     if (press_view && (press_view == rel_view) && (dist < (double)opt_drag_threshold))
     {
         auto target = press_view;
-        LOGI("spread-overview: click -> focus + close");
+        // Resolve the destination BEFORE tearing the session down.
+        auto target_ws = output->wset()->get_view_main_workspace(target);
+        auto cur_ws    = output->wset()->get_current_workspace();
+        LOGI("spread-overview: click at (", local.x, ",", local.y, ") -> focus + close;",
+            " view ws (", target_ws.x, ",", target_ws.y, ") current ws (",
+            cur_ws.x, ",", cur_ws.y, ")");
         deactivate(false); // navigating (focus/raise, maybe switch ws) -> close immediately
         if (target && target->is_mapped())
         {
-            // allow_switch_ws=true: a clicked thumbnail may live on another workspace;
-            // focusing it must switch to that workspace (scale parity). Without this,
-            // a cross-workspace click can't focus and appears to "do nothing".
-            wf::get_core().default_wm->focus_raise_view(target, true);
+            // Switch workspace EXPLICITLY, exactly as scale does (scale.cpp:410-411:
+            // `request_workspace(get_view_main_workspace(view))` followed by a
+            // focus_raise_view that does NOT switch).
+            //
+            // We must NOT use focus_raise_view(.., allow_switch_ws=true) here: that routes
+            // through output_t::ensure_visible() (output.cpp:195), which decides from the
+            // view's BOUNDING BOX and returns early when >= 10% of it is on screen --
+            //   if (area >= 0.1) /* View is somewhat visible */ return false;
+            // In the overview the clicked window is drawn as a thumbnail that is fully on
+            // screen, so ensure_visible concluded "no need to switch" and clicking a window
+            // from another workspace focused it WITHOUT going to its workspace. 002 made this
+            // reachable far more often: with per-window scaling a lone window nearly fills
+            // its cell, so clicking "that workspace" almost always lands on the thumbnail.
+            if ((target_ws.x != cur_ws.x) || (target_ws.y != cur_ws.y))
+            {
+                switch_workspace(target_ws);
+            }
+
+            wf::get_core().default_wm->focus_raise_view(target, false);
         }
     }
     else if (!press_view && (dist < (double)opt_drag_threshold))
@@ -139,16 +159,20 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
         // began on empty space (dist >= threshold) never switches. Esc/toggle never reach
         // here, so they still close without switching. For a bare click there is no drag,
         // so the cursor == the click point.
+        auto cur_ws = output->wset()->get_current_workspace();
         if (auto tgt = hit_test_cluster(current_layout, local.x, local.y))
         {
-            LOGI("spread-overview: empty click -> switch to ws (", tgt->x, ",", tgt->y, ")");
+            LOGI("spread-overview: empty click at (", local.x, ",", local.y,
+                ") -> switch to ws (", tgt->x, ",", tgt->y, ") from (",
+                cur_ws.x, ",", cur_ws.y, ")");
             deactivate(false); // switching workspace -> close immediately, then switch
             switch_workspace(wf::point_t{tgt->x, tgt->y});
         }
         else
         {
             // Outside all cells -> just close, no switch.
-            LOGI("spread-overview: empty click (outside all cells) -> close");
+            LOGI("spread-overview: empty click at (", local.x, ",", local.y,
+                ") outside all cells -> close");
             deactivate();
         }
     }
