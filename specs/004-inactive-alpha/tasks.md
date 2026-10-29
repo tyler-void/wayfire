@@ -18,13 +18,13 @@ Principle III).
 with, and the constitution's scope line governs only `spread-overview`. Landing the code first
 would put the tree in violation of its own governance.
 
-- [ ] K001 Amend `.specify/memory/constitution.md` to **v1.4.0 (MINOR)**: widen the scope line (`:44`, "Governs the `spread-overview` Wayfire plugin") to the fork's **in-tree plugins**, keeping spread-overview as the worked example; add a Sync Impact entry recording 1.3.0 → 1.4.0 and why
-- [ ] K002 In `.specify/memory/constitution.md` Principle V (`:105`), replace the obligation to "coexist with the user's `inactive-alpha` pywayfire daemon" with coexistence with the **native dimming plugin** (the obligation stands; only its referent changes), and note the daemon as superseded
-- [ ] K003 [P] Add to `docs/API-MAP-verified.md`: `wf::keyboard_focus_changed_signal` (`src/api/wayfire/seat.hpp:22`, core, may be nullptr), `wf::output_plugin_activated_changed_signal` (`signal-definitions.hpp:221`, emitted `output.cpp:271,297`), `output_t::is_plugin_active` (`output.hpp:172`, per-name only), and the `"alpha"` transformer convention (`plugins/single_plugins/alpha.cpp:92-93`, removal at `:90`,`:154`) — all cited from this tree
-- [ ] K004 Create `plugins/inactive-alpha/src/policy.hpp` + `policy.cpp`: `policy_input` and `target_alpha()` exactly as `contracts/policy.md` defines them — three lines of logic, zero Wayfire includes
-- [ ] K005 Create `test/plugins/inactive-alpha-policy.cpp` and register it in `test/plugins/meson.build` as `Inactive alpha policy test`, following the spread-overview layout test's shape (include the pure TU directly; doctest only)
-- [ ] K006 Implement the policy tests: #P1 focused never dimmed, #P2 suppression beats everything across four `dim` values, #P3 clamping incl. `dim` of `1.0`/`0.0`/`-1`/`2`, #P4 totality with `focused = 0`, #P5 monotonicity, plus the table-driven cross product
-- [ ] K007 Run `ninja -C build`, `meson test -C build "Inactive alpha policy test"` and the **full** `meson test -C build`; report files changed and test output. **No install, no tty2** — this increment cannot affect the desktop
+- [X] K001 Amend `.specify/memory/constitution.md` to **v1.4.0 (MINOR)**: widen the scope line (`:44`, "Governs the `spread-overview` Wayfire plugin") to the fork's **in-tree plugins**, keeping spread-overview as the worked example; add a Sync Impact entry recording 1.3.0 → 1.4.0 and why
+- [X] K002 In `.specify/memory/constitution.md` Principle V (`:105`), replace the obligation to "coexist with the user's `inactive-alpha` pywayfire daemon" with coexistence with the **native dimming plugin** (the obligation stands; only its referent changes), and note the daemon as superseded
+- [X] K003 [P] Add to `docs/API-MAP-verified.md`: `wf::keyboard_focus_changed_signal` (`src/api/wayfire/seat.hpp:22`, core, may be nullptr), `wf::output_plugin_activated_changed_signal` (`signal-definitions.hpp:221`, emitted `output.cpp:271,297`), `output_t::is_plugin_active` (`output.hpp:172`, per-name only), and the `"alpha"` transformer convention (`plugins/single_plugins/alpha.cpp:92-93`, removal at `:90`,`:154`) — all cited from this tree
+- [X] K004 Create `plugins/inactive-alpha/src/policy.hpp` + `policy.cpp`: `policy_input` and `target_alpha()` exactly as `contracts/policy.md` defines them — three lines of logic, zero Wayfire includes
+- [X] K005 Create `test/plugins/inactive-alpha-policy.cpp` and register it in `test/plugins/meson.build` as `Inactive alpha policy test`, following the spread-overview layout test's shape (include the pure TU directly; doctest only)
+- [X] K006 Implement the policy tests: #P1 focused never dimmed, #P2 suppression beats everything across four `dim` values, #P3 clamping incl. `dim` of `1.0`/`0.0`/`-1`/`2`, #P4 totality with `focused = 0`, #P5 monotonicity, plus the table-driven cross product
+- [X] K007 Run `ninja -C build`, `meson test -C build "Inactive alpha policy test"` and the **full** `meson test -C build`; report files changed and test output. **No install, no tty2** — this increment cannot affect the desktop
 
 ---
 

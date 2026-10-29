@@ -216,3 +216,41 @@ rects overlap mid-animation (002 FR-009):
 
 **Delta vs 0.10.1**: none of these three signatures exists in a different form in the Arch 0.10.1
 headers as used here; they are cited from this tree only, per Principle IV.
+
+---
+
+## 7. Added for 004-inactive-alpha (verified 2026-10-29 in this tree)
+
+Native inactive-window dimming replaces the pywayfire daemon; these are the four APIs it needs.
+
+**Focus changes** — `wf::keyboard_focus_changed_signal`, `src/api/wayfire/seat.hpp:22`.
+Emitted on **core** (not the output). Its own documentation: *"Keyboard focus is changed (may
+change to nullptr)"* — the nullptr case is real (a panel or layer-shell surface taking focus), and
+the plugin must then **retain** the last focused window rather than treat it as "nothing focused",
+or clicking a bar would dim every window at once. This is the signal behind IPC's `view-focused`
+(`plugins/ipc-rules/ipc-events.hpp:355`).
+
+**Is any plugin active on the output?** — `wf::output_plugin_activated_changed_signal`,
+`src/api/wayfire/signal-definitions.hpp:221`; emitted at `src/output/output.cpp:271` (activate)
+and `:297` (deactivate) with `data.plugin_name = owner->name` and `data.activated`. The name is
+the plugin's **grab-interface** name (`plugin_activation_data_t::name`).
+Its documentation notes it fires for plugins that *"(temporarily) change the way Wayfire works like
+Expo, Scale, Vswitch"* and **not** for one-shot actions (command, wsets) — so a workspace-switch
+animation does count as an activation.
+Note `wf::output_t::is_plugin_active(std::string)` (`src/api/wayfire/output.hpp:172`) answers only
+for a **named** plugin, so it cannot express "is anything active?"; tracking the signal is the way
+to get that without enumerating plugin names.
+
+**Window lifetime** — `wf::view_mapped_signal` / `wf::view_unmapped_signal` on core, as used by
+`ipc-events.hpp:134-135` and by spread-overview's `view_unmapped` connection.
+
+**Setting a window's opacity** — a `wf::scene::view_2d_transformer_t` named **`"alpha"`**, added at
+`wf::TRANSFORMER_2D`: `plugins/single_plugins/alpha.cpp:92-93`
+(`tmgr->add_transformer(node, wf::TRANSFORMER_2D, "alpha")`), read back at `:73`, and **removed
+again when the opacity returns to 1.0** (`:90`, `:154`) so an opaque window carries no idle node.
+This is the same transformer the stock `alpha` plugin, its IPC method `wf/alpha/set-view-alpha`
+(`alpha.cpp:54,58`) and spread-overview's save/restore (`render.cpp`'s `own_alpha_node`, same name)
+all use — which is why several components can agree about a view's opacity, and why *last writer
+wins* is the accepted semantics (constitution Principle V, amended in 1.4.0).
+
+**Delta vs 0.10.1**: not applicable — all four are cited from this tree only, per Principle IV.
