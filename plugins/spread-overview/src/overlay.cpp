@@ -357,46 +357,90 @@ void wallpaper_node_t::set_content(wf::geometry_t og,
     geometry = og;
     tex      = std::move(texture);
 
-    // Destination cells: the layout's per-workspace regions. wf::geometry_t is floating
-    // point on master (= geometryf_t), so the rectf fields pass straight through with no
-    // rounding — the SAME exact regions the veil/border draw and hit_test_cluster() resolves
-    // drops to (Principle I).
+    // 003: each tile is the largest OUTPUT-ASPECT rect centred in its cell — NOT the whole
+    // cell. This is what makes the hand-off to the real desktop seamless, and it is exact
+    // rather than close enough.
+    //
+    // The desktop wallpaper is drawn as cover-crop(image, output aspect) -> the output rect.
+    // For the zoom to be invisible, the overview must arrive at that same image-pixel-to-
+    // screen-pixel mapping at t = 1. Taking the cell's own aspect instead (which is what this
+    // did before) framed the picture differently, because a cell is not proportional to the
+    // output once outer_margin / cluster_gap are involved: on 3440x1440, 3x3, gap 0 a cell is
+    // 2.4286:1 against the screen's 2.3889:1. The zoom therefore ended on a differently
+    // cropped copy of the same image, which is the ghosted "silhouette" seen as the chrome
+    // faded out.
+    //
+    // Proof that this lands exactly, with cell (cw, ch), output (ow, oh), A = ow/oh, and the
+    // camera's cover scale at t = 1 being k = max(ow/cw, oh/ch) (#C2):
+    //   - cell wider than A: the tile is height-limited, tile = (ch*A, ch). Then
+    //     ow/cw < ow/tile.w = oh/ch, so k = oh/ch and tile*k = (ch*A*oh/ch, oh) = (ow, oh).
+    //   - cell narrower than A: the tile is width-limited, tile = (cw, cw/A). Then
+    //     oh/ch < oh/tile.h = ow/cw, so k = ow/cw and tile*k = (ow, cw/A*ow/cw) = (ow, oh).
+    // The tile is centred in its cell, the cell's centre maps to the output's centre at t = 1
+    // (#C2), and the camera is a uniform scale about that centre — so the mapped tile is
+    // EXACTLY the output rect, for any grid and any output. Verified numerically for gap 0 and
+    // gap 40 on 3440x1440: tile*k = 3440.0 x 1440.0 in both.
+    //
+    // The visible cost at rest is a slim letterbox inside each cell (9.3 px per side with the
+    // default gap of 0; 27.8 px at gap 40), which is what expo's cells look like. The veil
+    // covers it on every inactive cell.
+    //
+    // wf::geometry_t is floating point on master (= geometryf_t), so these pass through with
+    // no rounding. NOTE: the veil, border and hit_test_cluster still use the FULL cell regions
+    // (Principle I) — only the wallpaper is inset, because only the wallpaper has to agree
+    // with something drawn outside the overview.
+    const double out_aspect = (og.height > 0) ?
+        ((double)og.width / (double)og.height) : 1.0;
+
     cells.clear();
     for (const auto& r : cell_rects)
     {
-        cells.push_back(wf::geometry_t{r.x, r.y, r.w, r.h});
+        double w = r.w, h = r.h;
+        if ((r.w > 0.0) && (r.h > 0.0))
+        {
+            if ((r.w / r.h) > out_aspect)
+            {
+                w = r.h * out_aspect; // cell is wider: keep its height
+                h = r.h;
+            } else
+            {
+                w = r.w;              // cell is narrower: keep its width
+                h = r.w / out_aspect;
+            }
+        }
+
+        cells.push_back(wf::geometry_t{
+            r.x + (r.w - w) / 2.0, r.y + (r.h - h) / 2.0, w, h});
     }
 
-    // Cover-crop the source: fit the wallpaper into a cell preserving aspect and
-    // center-cropping the overflow — exactly what a wallpaper daemon does to fill a screen,
-    // so each cell matches the user's real desktop instead of a stretched/squished copy.
-    // The expo grid's cells are uniform, so ONE source box (from cell[0]) serves them all;
-    // it is set on the shared texture_t once and reused for every add_texture. If the size
-    // is unknown we skip the box entirely -> the renderer uses the full texture (a plain
-    // stretch), still a valid fallback (never a crash).
-    if (tex && !cells.empty() && (tex_size.width > 0) && (tex_size.height > 0))
+    // Cover-crop the source against the OUTPUT's aspect — the same crop a wallpaper daemon
+    // computes to fill the screen. Together with the output-aspect tile above, this makes the
+    // overview's image-pixel-to-screen-pixel mapping at t = 1 identical to the real desktop's,
+    // which is the whole point: cropping to the CELL's aspect (as this did) is what produced
+    // the visible silhouette. Every tile is output-aspect now, so ONE source box still serves
+    // them all; it is set on the shared texture_t once and reused for every add_texture. If the
+    // texture size is unknown we skip the box entirely -> the renderer uses the full texture (a
+    // plain stretch), still a valid fallback (never a crash).
+    if (tex && (tex_size.width > 0) && (tex_size.height > 0))
     {
         const double tw = tex_size.width;
         const double th = tex_size.height;
-        const double cw = std::max(1.0, cells[0].width);
-        const double ch = std::max(1.0, cells[0].height);
-        const double tex_aspect  = tw / th;
-        const double cell_aspect = cw / ch;
+        const double tex_aspect = tw / th;
 
         wlr_fbox box;
-        if (tex_aspect > cell_aspect)
+        if (tex_aspect > out_aspect)
         {
-            // Wallpaper is wider than the cell -> keep full height, crop left/right.
+            // Wallpaper is wider than the screen -> keep full height, crop left/right.
             box.height = th;
-            box.width  = th * cell_aspect;
+            box.width  = th * out_aspect;
             box.x = (tw - box.width) / 2.0;
             box.y = 0.0;
         }
         else
         {
-            // Wallpaper is taller than the cell -> keep full width, crop top/bottom.
+            // Wallpaper is taller than the screen -> keep full width, crop top/bottom.
             box.width  = tw;
-            box.height = tw / cell_aspect;
+            box.height = tw / out_aspect;
             box.x = 0.0;
             box.y = (th - box.height) / 2.0;
         }
