@@ -42,6 +42,13 @@ Every node gets exactly one motion.
 **Prerequisite:** the dim veil and grid border stop baking an output-sized cairo texture and draw
 solid rects instead.
 
+**The viewport change becomes instant.** A close that lands on another workspace switches the
+viewport with `set_workspace()` rather than `request_workspace()`, so **vswitch does not animate
+it** — the camera is the only motion. 001 deliberately used `request_workspace` to get vswitch's
+slide; with a zoom that slide is a competing motion, and the user described the combination as
+being "dragged to another workspace instead of that workspace zooming in to me". Expo takes exactly
+this approach (`expo.cpp:348-349`: its own zoom, then `set_workspace`).
+
 ## Alternatives considered
 
 - **Reuse expo's mechanism** (`workspace_wall_t` + an animated viewport, `expo.cpp:333-342`) —

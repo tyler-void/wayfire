@@ -143,6 +143,39 @@ improves the interaction most sensitive to latency on a 6.06 ms frame budget.
 
 ---
 
+## R-209 — The viewport change must be INSTANT, or vswitch fights the camera (VERIFIED)
+
+**Found at the I0 gate, 2026-10-31**, from the user's report: closing the overview onto another
+workspace "feels like I'm being dragged to another workspace instead of that workspace zooming in
+to me".
+
+`switch_workspace()` (`move.cpp`) calls `wf::workspace_set_t::request_workspace()`, which emits a
+change request that **vswitch** picks up and *animates* — it slides the viewport sideways
+(`plugins/vswitch/vswitch.cpp:528,539`: `add_direction(new_viewport - old_viewport)`). 001 chose
+that deliberately and its comment still says "(with vswitch animation)". With a camera zoom added,
+that slide becomes a **second, conflicting motion**: the cell grows while the viewport pans.
+
+**Expo does not do this.** Its close is:
+
+```cpp
+start_zoom(false);                          // expo.cpp:348 — its own zoom
+output->wset()->set_workspace(target_ws);   // expo.cpp:349 — INSTANT, not request_
+```
+
+`set_workspace()` changes the viewport with no animation, because the plugin is already providing
+the motion.
+
+**Decision**: for a close that changes workspace, the overview MUST set the viewport instantly and
+let the camera carry the motion — `set_workspace`, not `request_workspace`. This is what makes
+FR-002 read as "the workspace zooms in to me" rather than a pan.
+
+**Careful**: `switch_workspace()` is also the empty-cell-click path, and a clicked thumbnail's
+workspace change goes through `request_workspace` too (the `46f31453` fix). Both are "the overview
+is closing onto a workspace", so both become instant. Nothing else in the plugin changes the
+viewport.
+
+---
+
 ## R-207 — Reflow stays as it is (VERIFIED scope boundary)
 
 The stay-open re-flow after a relocate keeps gliding each thumbnail from its pre-relocate
