@@ -92,6 +92,15 @@ pointf camera_apply(const camera_t& cam, pointf p);
 // overlay nodes' destination rects, so they can never disagree about where the camera is.
 rectf camera_rect(const camera_t& cam, const rectf& r);
 
+// The INVERSE of camera_apply / camera_rect: screen space back to overview space. Needed
+// because the camera is composed INTO each thumbnail's transformer, so any code that reads a
+// rendered rect back and uses it as the base of a new animation (the drag snap-back, the reflow
+// snapshot) must divide the camera out first, or the next frame would zoom it twice. Exact at
+// t = 0 (the identity) and well-defined everywhere, since camera_scale is never below 1.
+// See contracts/camera.md #C8.
+pointf camera_unapply(const camera_t& cam, pointf q);
+rectf  camera_unrect(const camera_t& cam, const rectf& r);
+
 // Inverse of the cluster regions produced by layout(); shares the same geometry.
 // Returns the workspace whose cluster region contains (px,py), or nullopt if the
 // point is in a gap / margin / outside all clusters (caller treats as snap-back).

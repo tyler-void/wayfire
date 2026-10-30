@@ -69,7 +69,7 @@ fades.
 - [X] T022c [US1] In `plugins/spread-overview/src/input.cpp`, change the clicked-thumbnail and clicked-empty-cell routes from `deactivate(false)` to an **animated** close, so the zoom actually plays on the two routes the user uses most (today they tear down instantly). Esc/toggle already animate
 - [X] T023b [US1] In `plugins/spread-overview/src/move.cpp` (`switch_workspace`) and the clicked-thumbnail path in `input.cpp`, change the viewport switch from `request_workspace()` to **`set_workspace()`** — instant, no vswitch animation — so the camera is the only motion (research R-209, mirroring `expo.cpp:349`). Without this the cell zooms while vswitch simultaneously slides the viewport, which is the "being dragged sideways" the user reported at the I0 gate
 - [X] T024 [US1] Build, install, run the ABI-stamp check, and `meson test -C build "Spread overview layout test"` to confirm the pure core is untouched
-- [ ] T025 [US1] 🛑 **tty2 gate** — present quickstart §I2 as a numbered plan (all four dismissal routes, the 1×1-grid degeneracy, and a long `exit_duration` to watch the motion) and **STOP** for the user's result
+- [X] T025 [US1] 🛑 **tty2 gate** — present quickstart §I2 as a numbered plan (all four dismissal routes, the 1×1-grid degeneracy, and a long `exit_duration` to watch the motion) and **STOP** for the user's result
 
 ---
 
@@ -78,10 +78,10 @@ fades.
 **Goal**: open and close read as one gesture.
 **Independent test**: quickstart §I3 — including the mid-zoom grab (SC-005).
 
-- [ ] T026 [US2] In `plugins/spread-overview/src/render.cpp` (`build_spread`, `spread_anim::ENTRY`), set the pivot to the workspace current at activation and run the camera `t: 1 → 0` over `duration`; the pivot cell's windows converge from their real positions, which is what 001's entry already did for on-workspace views
-- [ ] T027 [US2] In `plugins/spread-overview/src/render.cpp` + `overview.hpp`, **delete** 001's per-cluster directional slide-in: the camera subsumes it for off-workspace views (FR-015). Remove the dead branch rather than leaving it unreachable, as `finalize_entry_anim` was removed in 002
-- [ ] T028 [US2] Verify FR-010 holds under the camera: because the camera is composed **into** each view's transformer, `live_thumb_rect` already reports the true on-screen rect, so press hit-testing, the drop target and the press-freeze need no change. Confirm by reading the path, and if anything bypasses the transformer, fix it rather than special-casing the camera
-- [ ] T029 [P] [US2] In `plugins/spread-overview/src/input.cpp`, extend the existing `drag start` log line with the camera's `t` at press, so SC-005's 1-px check can be read from `/tmp/master-log` mid-zoom
+- [X] T026 [US2] In `plugins/spread-overview/src/render.cpp` (`build_spread`, `spread_anim::ENTRY`), set the pivot to the workspace current at activation and run the camera `t: 1 → 0` over `duration`; the pivot cell's windows converge from their real positions, which is what 001's entry already did for on-workspace views
+- [X] T027 [US2] In `plugins/spread-overview/src/render.cpp` + `overview.hpp`, **delete** 001's per-cluster directional slide-in: the camera subsumes it for off-workspace views (FR-015). Remove the dead branch rather than leaving it unreachable, as `finalize_entry_anim` was removed in 002
+- [X] T028 [US2] Verify FR-010 holds under the camera: because the camera is composed **into** each view's transformer, `live_thumb_rect` already reports the true on-screen rect, so press hit-testing, the drop target and the press-freeze need no change. Confirm by reading the path, and if anything bypasses the transformer, fix it rather than special-casing the camera
+- [X] T029 [P] [US2] In `plugins/spread-overview/src/input.cpp`, extend the existing `drag start` log line with the camera's `t` at press, so SC-005's 1-px check can be read from `/tmp/master-log` mid-zoom
 - [ ] T030 [US2] Build, install, run the ABI-stamp check
 - [ ] T031 [US2] 🛑 **tty2 gate** — present quickstart §I3 as a numbered plan (mirror check from three workspaces, the mid-zoom grab, a window closing during both animations) and **STOP** for the user's result
 

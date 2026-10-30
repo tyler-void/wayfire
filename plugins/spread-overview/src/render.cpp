@@ -137,6 +137,22 @@ void spread_overview_t::build_spread(spread_anim anim)
         }
     }
 
+    // 003 (T026): the OPEN is the close played backwards. The camera pivots on the workspace
+    // current at activation and runs t: 1 -> 0, so the overview opens by pulling back from that
+    // workspace instead of sliding cells in from the edges. Armed here, before the per-view
+    // loop, because is_camera_driven() below reads the pivot. The clock is armed even if the
+    // pivot lookup fails, since it also drives the chrome's fade-in; set_camera_pivot leaves a
+    // degenerate (identity, #C4) camera in that case, so nothing can be distorted by it.
+    // REFLOW deliberately does NOT touch the camera (FR-009) — a relocate must not re-zoom.
+    if (anim == spread_anim::ENTRY)
+    {
+        set_camera_pivot(cws);
+        camera.t = 1.0; // so the initial per-view write below is already the zoomed-in frame
+        camera_t_applied = -1.0;
+        camera_clock = std::make_unique<wf::animation::simple_animation_t>(opt_duration);
+        camera_clock->animate(1.0, 0.0);
+    }
+
     for (auto& vo : result.views)
     {
         auto v  = session_views[vo.id];
@@ -164,12 +180,28 @@ void spread_overview_t::build_spread(spread_anim anim)
             // Animated: choose the START transform for this mode, then glide to the slot over
             // `duration`. Set the transformer to the START now so the first frame shows the
             // start, not a flash of the final slot; animate_step ticks it to the slot.
-            double s0 = s, tx0 = tx, ty0 = ty;
+            double s0 = s, tx0 = tx, ty0 = ty, a0 = 1.0;
+            bool cam_driven = false;
             if (anim == spread_anim::ENTRY)
             {
-                // From the window's real position (scale 1, no translation): off-workspace
-                // windows enter from their grid direction (the loved directional slide-in).
-                s0 = 1.0; tx0 = 0.0; ty0 = 0.0;
+                // 003 (T026/T027): the same role split as the close, mirrored.
+                cam_driven = is_camera_driven(v);
+                if (cam_driven)
+                {
+                    // Another workspace's window: the base is HELD at the slot (s0/tx0/ty0
+                    // already are the slot) and the CAMERA does all the moving, exactly as on
+                    // the close. At t = 1 its cell is off-screen, so it still arrives from the
+                    // right direction — which is all 001's "directional slide-in" ever was,
+                    // except that now it tracks the cell it belongs to instead of a per-cluster
+                    // guess. It fades 0 -> 1 as it rides in, mirroring the close's fade-out.
+                    a0 = 0.0;
+                }
+                else
+                {
+                    // The pivot cell's windows converge from their REAL positions: 001's entry
+                    // unchanged, and the exact mirror of the close's settle-to-identity.
+                    s0 = 1.0; tx0 = 0.0; ty0 = 0.0;
+                }
             }
             else // REFLOW
             {
@@ -191,12 +223,27 @@ void spread_overview_t::build_spread(spread_anim anim)
             a.scale_y.set(s0, s);
             a.translation_x.set(tx0, tx);
             a.translation_y.set(ty0, ty);
-            a.alpha.set(1.0, 1.0); // entry/reflow never fade — keep opaque
+            a.alpha.set(a0, 1.0); // 1->1 keeps a settling/reflowing window opaque throughout
             a.start();
-            tr->scale_x = tr->scale_y = (float)s0;
-            tr->translation_x = (float)tx0;
-            tr->translation_y = (float)ty0;
-            tr->alpha = 1.0f;
+
+            // The initial write, with the camera composed in for a camera-driven view: the
+            // clock's base is held at the slot, so without this the first frame would show the
+            // un-zoomed grid. OUTPUT_EFFECT_PRE means animate_step would in practice get there
+            // first, but a visual guarantee should not rest on hook ordering.
+            double wsx = s0, wsy = s0, wtx = tx0, wty = ty0;
+            // Not `cam_driven`: a REFLOW during an opening zoom is not an ENTRY, yet its first
+            // frame still has to be composed. camera_is_composed_into is exactly the condition
+            // animate_step will use next frame, so the two cannot disagree.
+            if (camera_is_composed_into(v))
+            {
+                compose_camera(v, wsx, wsy, wtx, wty);
+            }
+
+            tr->scale_x = (float)wsx;
+            tr->scale_y = (float)wsy;
+            tr->translation_x = (float)wtx;
+            tr->translation_y = (float)wty;
+            tr->alpha = (float)a0;
         }
 
         // T015: force opaque, capturing the daemon's dimming to restore on exit.
@@ -358,6 +405,7 @@ void spread_overview_t::clear_spread()
     // session starts at the exact identity (#C1) rather than inheriting a finished zoom.
     camera = camera_t{};
     camera_pivot_index = -1;
+    camera_t_applied = -1.0;
     camera_clock.reset();
     exit_target_ws.reset();
 
@@ -398,23 +446,42 @@ void spread_overview_t::animate_step()
     bool any_running = false;
 
     // 003 (T020): tick the CAMERA first — every camera-driven thumbnail and all four chrome
-    // nodes read it below, so it must be current before anything composes against it. The
-    // camera only exists while a direction is playing; outside that camera_pivot_index is -1
-    // and this whole block is skipped, leaving 002's behaviour bit-for-bit.
-    const bool cam_live = camera_clock && (camera_pivot_index >= 0) &&
-        (camera_pivot_index < (int)current_layout.clusters.size());
-    wf::point_t pivot_ws{-1, -1};
-    if (cam_live)
+    // nodes read it below, so it must be current before anything composes against it. The clock
+    // exists only while a direction is playing.
+    if (camera_clock)
     {
         camera.t = (double)*camera_clock;
-        auto& pc = current_layout.clusters[camera_pivot_index];
-        pivot_ws = wf::point_t{pc.ws.x, pc.ws.y};
-        push_camera_to_overlays();
         if (camera_clock->running())
         {
             any_running = true;
         }
+
+        // Guarded on t having actually MOVED. A frame where the camera is at rest — ACTIVE, or
+        // a drag that keeps the hook alive for the highlight fade — then costs no node writes
+        // and no damage, which is what I0's rect conversion was for.
+        if (camera.t != camera_t_applied)
+        {
+            camera_t_applied = camera.t;
+            push_camera_to_overlays();
+
+            // 003 (I3): the chrome's opacity IS the camera — alpha = 1 - t, the same formula
+            // for the close (t 0->1) and the open (t 1->0). This replaces 002's separate
+            // overlay_fade clock: one clock cannot drift out of step with the zoom, and the
+            // open gets its fade-in on the right duration without a second option.
+            const float oa = (float)(1.0 - std::clamp(camera.t, 0.0, 1.0));
+            if (dim_node)       { dim_node->alpha       = oa; }
+            if (wallpaper_node) { wallpaper_node->alpha = oa; }
+            if (border_node)    { border_node->alpha    = oa; }
+            if (highlight_node) { highlight_node->alpha = oa; }
+            output->render->damage_whole();
+        }
     }
+
+    // Applying the camera is skipped outright at t == 0, so ACTIVE and DRAGGING write exactly
+    // the values 002 wrote — bit-identical, not merely indistinguishable. (camera_rect IS the
+    // exact identity at t = 0 by #C1, but recovering a scale as (vw * sx) / vw is a round trip
+    // that need not be bit-exact.)
+    const bool cam_apply = camera_clock && (camera.t != 0.0);
 
     for (auto& [v, a] : anim_state)
     {
@@ -439,25 +506,9 @@ void spread_overview_t::animate_step()
         //                    blown up, instead of where it really lives (FR-005).
         //   anything else -> CAMERA-DRIVEN. Its slot rect is mapped through the camera, so it
         //                    rides outward as the pivot cell grows to fill the screen.
-        if (cam_live)
+        if (cam_apply && is_camera_driven(v))
         {
-            auto mw = output->wset()->get_view_main_workspace(v);
-            if ((mw.x != pivot_ws.x) || (mw.y != pivot_ws.y))
-            {
-                auto vg = v->get_geometry();
-                const double vw = std::max(1.0, (double)vg.width);
-                const double vh = std::max(1.0, (double)vg.height);
-                const double w  = vw * sx, h = vh * sy;
-                const double cx = (vg.x + vg.width / 2.0) + tx;
-                const double cy = (vg.y + vg.height / 2.0) + ty;
-                // camera_rect is the SAME mapping the chrome nodes use (overlay.hpp), which is
-                // why a thumbnail and the cell drawn behind it stay locked together.
-                auto m = camera_rect(camera, rectf{cx - w / 2.0, cy - h / 2.0, w, h});
-                sx = m.w / vw;
-                sy = m.h / vh;
-                tx = (m.x + m.w / 2.0) - (vg.x + vg.width / 2.0);
-                ty = (m.y + m.h / 2.0) - (vg.y + vg.height / 2.0);
-            }
+            compose_camera(v, sx, sy, tx, ty);
         }
 
         v->get_transformed_node()->begin_transform_update();
@@ -472,19 +523,6 @@ void spread_overview_t::animate_step()
         {
             any_running = true;
         }
-    }
-
-    // Exit overlay fade (A2): dissolve the veil / wallpaper / grid alongside the windows, so
-    // the overview fades out as one instead of the grid cutting away at teardown.
-    if (overlay_fade.running())
-    {
-        const float oa = (float)(double)overlay_fade;
-        if (dim_node)       { dim_node->alpha      = oa; }
-        if (wallpaper_node) { wallpaper_node->alpha = oa; }
-        if (border_node)    { border_node->alpha    = oa; }
-        if (highlight_node) { highlight_node->alpha = oa; }
-        output->render->damage_whole();
-        any_running = true;
     }
 
     // 002 (FR-011): the drop-target highlight cross-fade. Its own fixed ~120 ms clock, so it
@@ -561,11 +599,9 @@ void spread_overview_t::start_exit_anim()
     // 003 (FR-002): the camera converges on the destination cell, which the handoff just made
     // the current one. Fail-soft: an unknown cell leaves the camera at the identity and the
     // close degrades to exactly 002's fade.
-    if (set_camera_pivot(cws))
-    {
-        camera_clock = std::make_unique<wf::animation::simple_animation_t>(opt_exit_duration);
-        camera_clock->animate(0.0, 1.0);
-    }
+    set_camera_pivot(cws);
+    camera_clock = std::make_unique<wf::animation::simple_animation_t>(opt_exit_duration);
+    camera_clock->animate(0.0, 1.0);
 
     // The per-cluster labels are the one piece of chrome that is NOT camera-aware (they are
     // upstream simple_text_node_t). Rather than let them hang motionless in mid-air while
@@ -619,12 +655,10 @@ void spread_overview_t::start_exit_anim()
         a.start();
     }
 
-    // Fade the veil / wallpaper / grid out in lockstep with the windows (applied per-frame in
-    // animate_step) so the whole overview dissolves rather than the grid snapping at teardown.
-    overlay_fade.animate(1.0, 0.0);
-
-    if (!anim_state.empty() || overlay_fade.running() ||
-        (camera_clock && camera_clock->running()))
+    // The veil / wallpaper / grid dissolve in lockstep with the windows because their opacity
+    // is 1 - camera.t (animate_step), so the whole overview goes out as one piece rather than
+    // the grid snapping away at teardown.
+    if (!anim_state.empty() || (camera_clock && camera_clock->running()))
     {
         ensure_anim_hook();
     }
@@ -636,19 +670,24 @@ void spread_overview_t::start_exit_anim()
 // identity if there is no such cluster, which keeps the close working rather than failing.
 bool spread_overview_t::set_camera_pivot(wf::point_t ws)
 {
-    camera = camera_t{};
     camera_pivot_index = -1;
 
     auto og = output->get_relative_geometry();
+    // Fail-soft default: pivot == the whole output is the DEGENERATE camera, which #C4
+    // guarantees is the identity at every t. A missed lookup therefore cannot distort anything
+    // — it just means no zoom. A zero-sized pivot would be far worse than useless:
+    // camera_scale divides by max(1, pivot.w), so it would yield a scale of `output.w`.
+    camera.pivot  = rectf{0.0, 0.0, (double)og.width, (double)og.height};
+    camera.output = dimf{(double)og.width, (double)og.height};
+    camera.t      = 0.0;
+
     for (size_t i = 0; i < current_layout.clusters.size(); i++)
     {
         auto& c = current_layout.clusters[i];
         if ((c.ws.x == ws.x) && (c.ws.y == ws.y))
         {
             camera_pivot_index = (int)i;
-            camera.pivot  = c.region;
-            camera.output = dimf{(double)og.width, (double)og.height};
-            camera.t      = 0.0; // #C1: the identity until the clock moves it
+            camera.pivot = c.region; // #C1: the identity until the clock moves t
             return true;
         }
     }
@@ -656,6 +695,69 @@ bool spread_overview_t::set_camera_pivot(wf::point_t ws)
     LOGI("spread-overview: no cluster for ws (", ws.x, ",", ws.y,
         ") — camera stays at identity");
     return false;
+}
+
+// 003: is this view carried by the camera, or settling? Asked fresh every frame, so a view
+// that was relocated or unmapped cannot answer with a stale role (Principle VI). With no valid
+// pivot nothing is camera-driven and every view settles, which is 001/002's exact behaviour.
+bool spread_overview_t::is_camera_driven(wayfire_toplevel_view view)
+{
+    if ((camera_pivot_index < 0) ||
+        (camera_pivot_index >= (int)current_layout.clusters.size()))
+    {
+        return false;
+    }
+
+    auto& pivot = current_layout.clusters[camera_pivot_index].ws;
+    auto mw     = output->wset()->get_view_main_workspace(view);
+    return (mw.x != pivot.x) || (mw.y != pivot.y);
+}
+
+// Compose the camera into one view's base (slot) transform, in place. The thumbnail's rect is
+// rebuilt from the base, mapped through camera_rect — the SAME call the chrome nodes use, which
+// is why a thumbnail and the cell drawn behind it stay locked together — and then expressed
+// back as the scale + translation the transformer takes.
+void spread_overview_t::compose_camera(wayfire_toplevel_view view, double& sx, double& sy,
+    double& tx, double& ty)
+{
+    auto vg = view->get_geometry();
+    const double vw = std::max(1.0, (double)vg.width);
+    const double vh = std::max(1.0, (double)vg.height);
+    const double w  = vw * sx, h = vh * sy;
+    const double cx = (vg.x + vg.width / 2.0) + tx;
+    const double cy = (vg.y + vg.height / 2.0) + ty;
+
+    auto m = camera_rect(camera, rectf{cx - w / 2.0, cy - h / 2.0, w, h});
+    sx = m.w / vw;
+    sy = m.h / vh;
+    tx = (m.x + m.w / 2.0) - (vg.x + vg.width / 2.0);
+    ty = (m.y + m.h / 2.0) - (vg.y + vg.height / 2.0);
+}
+
+// Is the camera currently baked into this view's rendered transform? Exactly the condition
+// under which animate_step composed it, so the two can never disagree about whether there is
+// something to undo.
+bool spread_overview_t::camera_is_composed_into(wayfire_toplevel_view view)
+{
+    return camera_clock && (camera.t != 0.0) && is_camera_driven(view);
+}
+
+// The inverse of compose_camera: a rendered transform back to the base the clocks interpolate.
+void spread_overview_t::decompose_camera(wayfire_toplevel_view view, double& sx, double& sy,
+    double& tx, double& ty)
+{
+    auto vg = view->get_geometry();
+    const double vw = std::max(1.0, (double)vg.width);
+    const double vh = std::max(1.0, (double)vg.height);
+    const double w  = vw * sx, h = vh * sy;
+    const double cx = (vg.x + vg.width / 2.0) + tx;
+    const double cy = (vg.y + vg.height / 2.0) + ty;
+
+    auto m = camera_unrect(camera, rectf{cx - w / 2.0, cy - h / 2.0, w, h});
+    sx = m.w / vw;
+    sy = m.h / vh;
+    tx = (m.x + m.w / 2.0) - (vg.x + vg.width / 2.0);
+    ty = (m.y + m.h / 2.0) - (vg.y + vg.height / 2.0);
 }
 
 // Hand the SAME camera to all four chrome nodes. One call site, so the chrome can never be a
@@ -831,11 +933,23 @@ void spread_overview_t::animate_thumb_to_slot(wayfire_toplevel_view view)
         return;
     }
 
+    // 003: start from the BASE transform, not the rendered one. While a camera is running,
+    // tr->* already has the camera composed in and animate_step will compose it again next
+    // frame — the thumbnail would leap outward instead of gliding back. The slot (the end) is
+    // already a base value, so only the start needs undoing. At t = 0 this is a no-op, which is
+    // every snap-back that does not land inside an opening zoom.
+    double bsx = tr->scale_x, bsy = tr->scale_y;
+    double btx = tr->translation_x, bty = tr->translation_y;
+    if (camera_is_composed_into(view))
+    {
+        decompose_camera(view, bsx, bsy, btx, bty);
+    }
+
     auto& a = anim_state.try_emplace(view, opt_duration).first->second;
-    a.scale_x.set(tr->scale_x, s);
-    a.scale_y.set(tr->scale_y, s);
-    a.translation_x.set(tr->translation_x, tx);
-    a.translation_y.set(tr->translation_y, ty);
+    a.scale_x.set(bsx, s);
+    a.scale_y.set(bsy, s);
+    a.translation_x.set(btx, tx);
+    a.translation_y.set(bty, ty);
     // MANDATORY: animate_step writes tr->alpha every frame, so a freshly constructed clock
     // would drive the thumbnail to alpha 0 and fade it out mid-snap-back.
     a.alpha.set(1.0, 1.0);
@@ -855,7 +969,12 @@ void spread_overview_t::snapshot_thumb_screen_rects()
         (void)tr;
         if (auto r = live_thumb_rect(v)) // same math the hit-test uses (Principle I)
         {
-            reflow_prev_rects[v] = *r;
+            // 003: store the BASE rect. live_thumb_rect is deliberately in SCREEN space — that
+            // is what hit-testing and the drop target need — but build_spread turns this
+            // snapshot into a clock's start value, and animate_step re-composes the camera onto
+            // it. Keeping the screen rect here would zoom a reflow twice if a window were
+            // dropped during an opening zoom. Identity at t = 0, i.e. in every ordinary reflow.
+            reflow_prev_rects[v] = camera_is_composed_into(v) ? camera_unrect(camera, *r) : *r;
         }
     }
 }

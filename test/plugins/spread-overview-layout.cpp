@@ -999,3 +999,75 @@ TEST_CASE("camera: camera_rect agrees with camera_apply + camera_scale")
         CHECK(id.h == probe.h);
     }
 }
+
+// #C8: camera_unrect / camera_unapply undo camera_rect / camera_apply. This is the property the
+// plugin actually leans on: the camera is composed INTO each thumbnail's transformer, so the
+// drag snap-back and the reflow snapshot -- both of which read a RENDERED rect and reuse it as
+// the base of a new animation -- must divide the camera out or the next frame zooms it twice.
+TEST_CASE("camera #C8: unapply/unrect invert apply/rect")
+{
+    std::mt19937 rng(20031031u); // fixed seed: deterministic (#C6)
+    std::uniform_real_distribution<double> unit(0.0, 1.0);
+
+    const std::vector<dimf> outs = {{3440, 1440}, {1920, 1080}, {1280, 800}, {2560, 1440}};
+    int checked = 0;
+
+    for (auto& out : outs)
+    {
+        for (int gw = 1; gw <= 4; gw++)
+        {
+            for (int gh = 1; gh <= 4; gh++)
+            {
+                auto cells = grid_cells({gw, gh}, out);
+                for (auto& cell : cells)
+                {
+                    for (double t : {0.0, 0.1, 0.37, 0.5, 0.75, 0.99, 1.0})
+                    {
+                        auto cam = cam_of(cell, out, t);
+
+                        // points, including well outside the output
+                        for (int i = 0; i < 6; i++)
+                        {
+                            pointf p{unit(rng) * out.w * 2.0 - out.w / 2.0,
+                                unit(rng) * out.h * 2.0 - out.h / 2.0};
+                            auto back = camera_unapply(cam, camera_apply(cam, p));
+                            INFO("grid " << gw << "x" << gh << " t=" << t);
+                            CHECK(back.x == doctest::Approx(p.x).epsilon(1e-9));
+                            CHECK(back.y == doctest::Approx(p.y).epsilon(1e-9));
+                            checked++;
+                        }
+
+                        // whole rects
+                        rectf r{unit(rng) * out.w, unit(rng) * out.h,
+                            10.0 + unit(rng) * 800.0, 10.0 + unit(rng) * 600.0};
+                        auto rb = camera_unrect(cam, camera_rect(cam, r));
+                        INFO("grid " << gw << "x" << gh << " t=" << t);
+                        CHECK(rb.x == doctest::Approx(r.x).epsilon(1e-9));
+                        CHECK(rb.y == doctest::Approx(r.y).epsilon(1e-9));
+                        CHECK(rb.w == doctest::Approx(r.w).epsilon(1e-9));
+                        CHECK(rb.h == doctest::Approx(r.h).epsilon(1e-9));
+                        checked++;
+
+                        // At t = 0 the SIZE is exact (r.w / 1.0), but the position is not, and
+                        // deliberately so: #C1's exactness is a property of camera_apply on
+                        // POINTS. A rect is round-tripped through its centre, and
+                        // (r.x + r.w/2) - r.w/2 is not bit-exact in floating point for general
+                        // r. It never matters in the plugin, which skips the camera entirely at
+                        // t == 0 (camera_is_composed_into), so no rect is ever mapped there.
+                        if (t == 0.0)
+                        {
+                            auto id = camera_unrect(cam, r);
+                            CHECK(id.w == r.w);
+                            CHECK(id.h == r.h);
+                            CHECK(id.x == doctest::Approx(r.x).epsilon(1e-12));
+                            CHECK(id.y == doctest::Approx(r.y).epsilon(1e-12));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    MESSAGE("camera #C8 round trips: " << checked);
+    CHECK(checked >= 3000);
+}

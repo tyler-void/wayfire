@@ -176,6 +176,34 @@ viewport.
 
 ---
 
+## R-211 — Composing the camera into the transformer creates an inverse obligation (I3)
+
+The camera is composed into each view's `view_2d_transformer_t` rather than applied by a separate
+node. That is what makes FR-010 free — `live_thumb_rect` reads the transformer, so the rect it
+reports is the true on-screen rect even mid-zoom, and press hit-testing, the drop target and the
+press-freeze need no camera awareness at all (T028 holds by construction).
+
+The cost is the mirror of that benefit: **a rendered transform is not a base transform.**
+`animate_step` composes the camera onto whatever base a clock interpolates, so any path that
+reads the rendered values back and reuses them as a base applies the camera twice on the next
+frame. Two paths do exactly that, and both are reachable *during an opening zoom*:
+
+1. `animate_thumb_to_slot` — the drag snap-back and the release of a press-frozen thumbnail. It
+   takes the current transform as the start and the slot as the end. Reachable by pressing a
+   thumbnail within the 300 ms entry, which is the most natural thing a user does after opening.
+2. `snapshot_thumb_screen_rects` — the pre-relocate snapshot a REFLOW animates from.
+
+Fixed by adding the pure inverse (`camera_unapply` / `camera_unrect`, contract #C8) and dividing
+the camera out at those two sites, under the single predicate `camera_is_composed_into(view)` —
+by construction the same condition `animate_step` used to compose it, so the two cannot disagree.
+`live_thumb_rect` is deliberately left in screen space. **Screen space for input, base space for
+clocks.**
+
+Found by reading the path while wiring I3, not on screen; it would have presented at the Phase 5
+gate (T034) as "press mid-zoom then release makes the thumbnail leap outward".
+
+---
+
 ## R-210 — The close must switch the viewport FIRST, then zoom (INFERRED, found while wiring I2)
 
 FR-005 says the destination workspace's windows arrive at their **real desktop positions**. The

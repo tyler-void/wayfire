@@ -235,9 +235,12 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
         // pointer displacement so far. The thumbnail's displacement must match the
         // pointer's within 1 px from here on.
         auto lr = live_thumb_rect(press_view);
+        // 003 (T029): camera_t too, so SC-005's 1-px check can be read straight out of
+        // /tmp/master-log even for a press that lands mid-zoom (it should read 0 at rest).
         LOGI("spread-overview: drag start press=(", press_pos.x, ",", press_pos.y,
             ") thumb=(", lr ? lr->x : 0.0, ",", lr ? lr->y : 0.0,
-            ") pointer_delta=(", local.x - press_pos.x, ",", local.y - press_pos.y, ")");
+            ") pointer_delta=(", local.x - press_pos.x, ",", local.y - press_pos.y,
+            ") camera_t=", camera.t);
     }
 
     // Principle VI: if the dragged view unmapped mid-drag, end cleanly (no crash, no

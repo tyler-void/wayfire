@@ -489,6 +489,34 @@ rectf camera_rect(const camera_t& cam, const rectf& r)
     return rectf{c.x - w / 2.0, c.y - h / 2.0, w, h};
 }
 
+// #C8: the inverse maps. camera_apply is p -> (p - C) * k + A, so the inverse is
+// q -> (q - A) / k + C. k >= 1 always (a cell is never larger than the output), so the division
+// is always safe — there is no degenerate camera to guard against.
+pointf camera_unapply(const camera_t& cam, pointf q)
+{
+    const double t = clamp01(cam.t);
+    if (t <= 0.0)
+    {
+        return q; // exact identity, mirroring #C1
+    }
+
+    const double k  = camera_scale(cam);
+    const double cx = cam.pivot.x + cam.pivot.w / 2.0;
+    const double cy = cam.pivot.y + cam.pivot.h / 2.0;
+    const double ax = cx + (cam.output.w / 2.0 - cx) * t;
+    const double ay = cy + (cam.output.h / 2.0 - cy) * t;
+    return pointf{(q.x - ax) / k + cx, (q.y - ay) / k + cy};
+}
+
+rectf camera_unrect(const camera_t& cam, const rectf& r)
+{
+    const double k = camera_scale(cam);
+    auto c = camera_unapply(cam, pointf{r.x + r.w / 2.0, r.y + r.h / 2.0});
+    const double w = r.w / k;
+    const double h = r.h / k;
+    return rectf{c.x - w / 2.0, c.y - h / 2.0, w, h};
+}
+
 std::optional<ivec2> hit_test_cluster(const layout_result& r, double px, double py)
 {
     for (auto& c : r.clusters)

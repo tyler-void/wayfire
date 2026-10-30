@@ -73,6 +73,37 @@ camera_scale(cam)    = k
 
 ---
 
+## 3b. Added in I3 — the inverse (#C8)
+
+```cpp
+pointf camera_unapply(const camera_t& cam, pointf q);  // inverse of camera_apply
+rectf  camera_unrect(const camera_t& cam, const rectf& r);  // inverse of camera_rect
+```
+
+```
+camera_unapply(cam, q) = (q − A) / k + C
+```
+
+- **#C8 — Round trip.** `camera_unapply(cam, camera_apply(cam, p)) == p` and
+  `camera_unrect(cam, camera_rect(cam, r)) == r`, within 1e-9, for every `t`. Well-defined
+  everywhere because `k ≥ 1`, so there is no division to guard.
+
+**Why it exists.** The camera is composed *into* each thumbnail's `view_2d_transformer_t`. Any
+code that reads a **rendered** transform back and reuses it as the **base** of a new animation
+would therefore have the camera applied twice on the next frame. There are exactly two such
+paths — the drag snap-back (`animate_thumb_to_slot`) and the reflow snapshot
+(`snapshot_thumb_screen_rects`) — and both divide the camera out first. `live_thumb_rect`
+deliberately does **not**: hit-testing and the drop target want screen space. The rule is
+*screen space for input, base space for clocks*.
+
+**Correction to §3 #C1 as applied to rects.** #C1's exactness is a property of `camera_apply` on
+**points**. A rect is mapped through its centre, and `(r.x + r.w/2) − r.w/2` is not bit-exact in
+floating point for general `r`, so `camera_rect`/`camera_unrect` at `t = 0` are exact in **size**
+but only approximate in **position**. This is not a defect and nothing rests on it: the plugin
+skips the camera outright at `t == 0`, so no rect is ever mapped there.
+
+---
+
 ## 4. Tests to add (same doctest binary `Spread overview layout test`)
 
 1. **#C1** on a grid of sample points, including points inside, on the edge of, and far outside

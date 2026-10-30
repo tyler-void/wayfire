@@ -61,7 +61,12 @@ enum class session_state
 
 // How build_spread() places the thumbnails (T027):
 //   NONE   — snap straight to the slot (used by nothing now; kept for a possible instant path)
-//   ENTRY  — animate in from each window's real position (open); the loved directional slide-in
+//   ENTRY  — open. 003: the close played backwards. The camera pivots on the workspace current
+//            at activation and runs t: 1 -> 0, so the pivot cell's windows converge from their
+//            real positions (001's entry, unchanged) while every other cell is carried in by
+//            the camera. 001's per-cluster "directional slide-in" is not separate code -- it
+//            was the emergent effect of starting an off-workspace view at its real (off-screen)
+//            position, and the camera now subsumes it (FR-015)
 //   REFLOW — animate from each thumbnail's PRE-reflow on-screen rect to its new slot (after a
 //            relocate), so the moved window glides into its target workspace instead of popping
 enum class spread_anim
@@ -148,9 +153,7 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     wf::option_wrapper_t<double> opt_small_window_boost{"spread-overview/small_window_boost"};
     // 002 (FR-010): the CLOSE has its own length — both the per-thumbnail settle/fade and the
     // overlay dissolve read it, so the overview still dissolves as one piece. Default 225ms
-    // (0.75x the 300ms open); setting it equal to `duration` restores 001 exactly. Declared
-    // BEFORE overlay_fade below: members initialize in declaration order, and overlay_fade is
-    // constructed from this option.
+    // (0.75x the 300ms open); setting it equal to `duration` restores 001 exactly.
     wf::option_wrapper_t<wf::animation_description_t> opt_exit_duration{
         "spread-overview/exit_duration"};
 
@@ -181,10 +184,13 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // and drops the input grab); animate_step defers it here to the next event-loop idle (A2).
     wf::wl_idle_call finish_idle;
 
-    // Overlay opacity fade for the exit (A2): the dim veil, wallpaper tiles and grid fade out
-    // together with the windows so the overview dissolves as one, instead of the grid snapping
-    // away at teardown. Driven by the same `duration`; only runs during an animated close.
-    wf::animation::simple_animation_t overlay_fade{opt_exit_duration};
+    // 003 (I3): 002's separate `overlay_fade` clock is GONE. The chrome's opacity is now a
+    // function of the camera — alpha = 1 - t — which is the same formula in both directions
+    // (close: t 0->1, open: t 1->0). One clock instead of two means the dissolve cannot drift
+    // out of step with the zoom, and the open gains a fade-in on the correct duration for free.
+    // camera_t_applied is the last `t` pushed to the chrome, so a frame where the camera has
+    // not moved (ACTIVE, or a drag keeping the hook alive) costs no writes and no damage.
+    double camera_t_applied = -1.0;
 
     // 003 (I2): the overview CAMERA — the zoom itself. `camera` carries the pivot cell, the
     // output size and `t`; `camera_pivot_index` is the cluster the pivot came from, so the
@@ -292,6 +298,23 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // identical across the switch and only the camera animates.
     bool set_camera_pivot(wf::point_t ws);
     void push_camera_to_overlays();
+    // True when `view` does NOT belong to the camera's pivot cell, i.e. it is camera-driven
+    // rather than settling. Derived from the pivot cluster on every call, never stored, so a
+    // relocated or unmapped view cannot carry a stale role (Principle VI). False whenever
+    // there is no valid pivot — then every view settles, which is 001/002's behaviour.
+    bool is_camera_driven(wayfire_toplevel_view view);
+    // Compose the camera into a base (slot) transform for ONE view, in place. Shared by the
+    // per-frame tick and the initial write in build_spread, so the first painted frame of an
+    // open cannot disagree with the frames that follow it.
+    void compose_camera(wayfire_toplevel_view view, double& sx, double& sy,
+        double& tx, double& ty);
+    // The inverse, and the reason it is needed: animate_step composes the camera onto whatever
+    // base a clock interpolates, so any path that reads a RENDERED transform back and reuses it
+    // as a base (the drag snap-back, the reflow snapshot) must divide the camera out first or
+    // the next frame zooms it twice. True only while a camera is actually displaced.
+    bool camera_is_composed_into(wayfire_toplevel_view view);
+    void decompose_camera(wayfire_toplevel_view view, double& sx, double& sy,
+        double& tx, double& ty);
     void handoff_viewport(wf::point_t dest);
 
     // T028: a session view unmapped mid-overview. forget_view scrubs the dead observer_ptr from
