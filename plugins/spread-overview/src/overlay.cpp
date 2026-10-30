@@ -1,6 +1,5 @@
 #include "overlay.hpp"
 
-#include <cairo/cairo.h>
 #include <algorithm>
 #include <cmath>
 
@@ -16,47 +15,260 @@ void border_node_t::set_content(wf::geometry_t og,
     clusters     = std::move(cluster_rects);
     border_size  = std::max(1, bs);
     border_color = bc;
-    rerender();
+    build_lines();
+    wf::scene::damage_node(this->shared_from_this(), geometry);
 }
 
-void border_node_t::rerender()
+// One rect per grid boundary. The grid is a uniform lattice, so the distinct cell edges in x
+// and in y ARE the gridlines; drawing them directly means an interior boundary shared by two
+// cells is painted exactly once (003 I0 / R-204).
+void border_node_t::build_lines()
 {
-    const int W = std::max(1, (int)geometry.width);
-    const int H = std::max(1, (int)geometry.height);
-
-    auto surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-    auto cr = cairo_create(surface);
-
-    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-    cairo_paint(cr);
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-
-    const auto stroke = [&] (const rectf& r, double lw, const wf::color_t& col)
+    lines.clear();
+    if (clusters.empty())
     {
-        cairo_set_source_rgba(cr, col.r, col.g, col.b, col.a);
-        cairo_set_line_width(cr, lw);
-        // Stroke centered ON the region edges (no inset). At cluster_gap=0 adjacent cells
-        // share an edge, so their strokes coincide into ONE gridline — single thickness,
-        // no doubling. hit_test_cluster is unaffected: regions are half-open [x, x+w), so
-        // a boundary pixel belongs to exactly one cluster.
-        cairo_rectangle(cr, r.x, r.y, r.w, r.h);
-        cairo_stroke(cr);
-    };
-
-    // Normal border around every workspace cluster (the expo-style separating grid).
-    // 002: uniformly — the drop-target highlight is highlight_node_t's job now, drawn
-    // above this one, so this texture no longer changes while dragging.
-    for (size_t i = 0; i < clusters.size(); i++)
-    {
-        stroke(clusters[i], border_size, border_color);
+        return;
     }
 
-    cairo_surface_flush(surface);
-    tex = wf::owned_texture_t{surface};
-    cairo_destroy(cr);
-    cairo_surface_destroy(surface);
+    const auto uniq = [] (std::vector<double> v)
+    {
+        std::sort(v.begin(), v.end());
+        v.erase(std::unique(v.begin(), v.end(),
+            [] (double a, double b) { return std::abs(a - b) < 0.01; }), v.end());
+        return v;
+    };
 
+    std::vector<double> xs, ys;
+    double gx0 = clusters[0].x, gx1 = clusters[0].x + clusters[0].w;
+    double gy0 = clusters[0].y, gy1 = clusters[0].y + clusters[0].h;
+    for (const auto& c : clusters)
+    {
+        xs.push_back(c.x); xs.push_back(c.x + c.w);
+        ys.push_back(c.y); ys.push_back(c.y + c.h);
+        gx0 = std::min(gx0, c.x); gx1 = std::max(gx1, c.x + c.w);
+        gy0 = std::min(gy0, c.y); gy1 = std::max(gy1, c.y + c.h);
+    }
+
+    xs = uniq(std::move(xs));
+    ys = uniq(std::move(ys));
+
+    // Centred ON the boundary, as the cairo strokes were, so the grid sits in the same pixels
+    // as before. The extra `bs` of length squares off the corners.
+    const double bs = border_size;
+    for (double x : xs)
+    {
+        lines.push_back(rectf{x - bs / 2.0, gy0 - bs / 2.0, bs, (gy1 - gy0) + bs});
+    }
+
+    for (double y : ys)
+    {
+        lines.push_back(rectf{gx0 - bs / 2.0, y - bs / 2.0, (gx1 - gx0) + bs, bs});
+    }
+}
+
+void border_node_t::render_lines(const wf::scene::render_instruction_t& data)
+{
+    if (alpha <= 0.001f)
+    {
+        return;
+    }
+
+    auto col = border_color;
+    col.a *= alpha; // the exit dissolve
+    for (const auto& l : lines)
+    {
+        if ((l.w > 0) && (l.h > 0))
+        {
+            data.pass->add_rect(col, data.target,
+                wf::geometry_t{l.x, l.y, l.w, l.h}, data.damage);
+        }
+    }
+}
+
+/* ------------------------------ dim_node_t ------------------------------- */
+void dim_node_t::set_content(wf::geometry_t og,
+    std::vector<rectf> cluster_rects,
+    wf::color_t veil, double brightness, int active_index)
+{
+    geometry   = og;
+    clusters   = std::move(cluster_rects);
+    veil_color = veil;
+    inactive_brightness = std::min(1.0, std::max(0.0, brightness));
+    active      = active_index;
+    prev_active = active_index; // no fade on a fresh build
+    progress    = 1.0;
+    build_strips();
     wf::scene::damage_node(this->shared_from_this(), geometry);
+}
+
+// The complement of the cells inside `geometry`, as non-overlapping rects: full-width strips
+// for the row gaps and the top/bottom margins, then per-row-band strips for the column gaps
+// and the left/right margins. Splitting the vertical strips by row band is what stops a
+// horizontal and a vertical gap painting the same pixel twice at a crossing.
+void dim_node_t::build_strips()
+{
+    strips.clear();
+    if (clusters.empty())
+    {
+        return;
+    }
+
+    const auto spans = [] (std::vector<std::pair<double, double>> v)
+    {
+        std::sort(v.begin(), v.end());
+        std::vector<std::pair<double, double>> out;
+        for (auto& s : v)
+        {
+            if (!out.empty() && (s.first <= out.back().second + 0.01))
+            {
+                out.back().second = std::max(out.back().second, s.second);
+            } else
+            {
+                out.push_back(s);
+            }
+        }
+
+        return out;
+    };
+
+    std::vector<std::pair<double, double>> cols, rows;
+    for (const auto& c : clusters)
+    {
+        cols.emplace_back(c.x, c.x + c.w);
+        rows.emplace_back(c.y, c.y + c.h);
+    }
+
+    cols = spans(std::move(cols));
+    rows = spans(std::move(rows));
+
+    const double x0 = geometry.x, x1 = geometry.x + geometry.width;
+    const double y0 = geometry.y, y1 = geometry.y + geometry.height;
+
+    // Row gaps + top/bottom margins: full width.
+    double cursor = y0;
+    for (const auto& r : rows)
+    {
+        if (r.first > cursor + 0.01)
+        {
+            strips.push_back(rectf{x0, cursor, x1 - x0, r.first - cursor});
+        }
+
+        cursor = std::max(cursor, r.second);
+    }
+
+    if (y1 > cursor + 0.01)
+    {
+        strips.push_back(rectf{x0, cursor, x1 - x0, y1 - cursor});
+    }
+
+    // Column gaps + left/right margins, clipped to each row band so they cannot overlap the
+    // strips above.
+    for (const auto& rb : rows)
+    {
+        double cx = x0;
+        for (const auto& c : cols)
+        {
+            if (c.first > cx + 0.01)
+            {
+                strips.push_back(rectf{cx, rb.first, c.first - cx, rb.second - rb.first});
+            }
+
+            cx = std::max(cx, c.second);
+        }
+
+        if (x1 > cx + 0.01)
+        {
+            strips.push_back(rectf{cx, rb.first, x1 - cx, rb.second - rb.first});
+        }
+    }
+}
+
+bool dim_node_t::set_active(int cluster_index)
+{
+    if (cluster_index == active)
+    {
+        return false;
+    }
+
+    // The cell we were showing bright becomes the outgoing one — unless a previous fade is
+    // still mid-flight, in which case it has already been drawn away.
+    prev_active = (progress >= 1.0) ? active : -1;
+    active      = cluster_index;
+    progress    = 0.0;
+    wf::scene::damage_node(this->shared_from_this(), geometry);
+    return true;
+}
+
+void dim_node_t::set_progress(double p)
+{
+    const double clamped = std::min(1.0, std::max(0.0, p));
+    if (clamped == progress)
+    {
+        return; // nothing moved -> do NOT damage the whole output
+    }
+
+    progress = clamped;
+    wf::scene::damage_node(this->shared_from_this(), geometry);
+}
+
+double dim_node_t::cell_veil(int index) const
+{
+    const bool is_cur  = (index == active);
+    const bool was_prev = (index == prev_active);
+
+    if (is_cur && was_prev)
+    {
+        return 0.0; // stayed bright
+    }
+
+    if (is_cur)
+    {
+        return 1.0 - progress; // fading to bright
+    }
+
+    if (was_prev)
+    {
+        return progress; // fading back to dim
+    }
+
+    return 1.0; // always dim
+}
+
+void dim_node_t::render_veil(const wf::scene::render_instruction_t& data)
+{
+    if (alpha <= 0.001f)
+    {
+        return;
+    }
+
+    // expo's model: an inactive cell sits at `inactive_brightness`, so its veil alpha is
+    // veil.a * (1 - brightness). Identical arithmetic to the cairo version it replaces.
+    const double base = veil_color.a * (1.0 - inactive_brightness);
+
+    const auto put = [&] (const rectf& r, double strength)
+    {
+        const double a = base * strength * alpha;
+        if ((a <= 0.001) || (r.w <= 0) || (r.h <= 0))
+        {
+            return;
+        }
+
+        auto col = veil_color;
+        col.a = a;
+        data.pass->add_rect(col, data.target,
+            wf::geometry_t{r.x, r.y, r.w, r.h}, data.damage);
+    };
+
+    for (size_t i = 0; i < clusters.size(); i++)
+    {
+        put(clusters[i], cell_veil((int)i));
+    }
+
+    // Gaps and margins are never "the active cell", so they stay at full veil strength.
+    for (const auto& st : strips)
+    {
+        put(st, 1.0);
+    }
 }
 
 /* --------------------------- highlight_node_t ---------------------------- */
@@ -132,69 +344,6 @@ void highlight_node_t::render_cell(const wf::scene::render_instruction_t& data,
             data.pass->add_rect(col, data.target, box, data.damage);
         }
     }
-}
-
-/* ------------------------------ dim_node_t ------------------------------- */
-void dim_node_t::set_content(wf::geometry_t og,
-    std::vector<rectf> cluster_rects,
-    wf::color_t veil, double brightness, int active_index)
-{
-    geometry     = og;
-    clusters     = std::move(cluster_rects);
-    veil_color   = veil;
-    inactive_brightness = std::clamp(brightness, 0.0, 1.0);
-    active       = active_index;
-    rerender();
-}
-
-void dim_node_t::set_active(int cluster_index)
-{
-    if (cluster_index == active)
-    {
-        return;
-    }
-
-    active = cluster_index;
-    rerender();
-}
-
-void dim_node_t::rerender()
-{
-    const int W = std::max(1, (int)geometry.width);
-    const int H = std::max(1, (int)geometry.height);
-
-    auto surface = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, W, H);
-    auto cr = cairo_create(surface);
-
-    cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-    cairo_paint(cr);
-
-    // Inactive-cell veil strength follows expo's model: alpha = veil.a * (1 - brightness).
-    // Fill the WHOLE output first (so inter-cluster gaps at cluster_gap>0 are dimmed too),
-    // then punch the active cell fully transparent below.
-    const double a = veil_color.a * (1.0 - inactive_brightness);
-    cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
-    cairo_set_source_rgba(cr, veil_color.r, veil_color.g, veil_color.b, a);
-    cairo_rectangle(cr, 0, 0, W, H);
-    cairo_fill(cr);
-
-    // The active cluster (current workspace when idle, drop-target while dragging) reads
-    // fully bright: clear the veil over exactly its region. CLEAR removes coverage, which
-    // OVER cannot — this is why we fill-then-punch rather than fill-inactive-cells.
-    if ((active >= 0) && (active < (int)clusters.size()))
-    {
-        const auto& r = clusters[active];
-        cairo_set_operator(cr, CAIRO_OPERATOR_CLEAR);
-        cairo_rectangle(cr, r.x, r.y, r.w, r.h);
-        cairo_fill(cr);
-    }
-
-    cairo_surface_flush(surface);
-    tex = wf::owned_texture_t{surface};
-    cairo_destroy(cr);
-    cairo_surface_destroy(surface);
-
-    wf::scene::damage_node(this->shared_from_this(), geometry);
 }
 
 /* --------------------------- wallpaper_node_t ---------------------------- */

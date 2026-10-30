@@ -252,10 +252,14 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
     // Follow the cursor by the delta since press (self-managed drag, ADR-001 — no
     // core_drag_t). The delta on the layout translation keeps the grabbed point under
     // the cursor without snapping the corner to it.
+    // 003 I0 (R-205): wrap the write so the SCENE computes damage from the node's old and new
+    // boxes, the way animate_step already does. This path used to call damage_whole(), i.e. it
+    // repainted all 4.95 Mpixel of a 3440x1440 output on every pointer-motion event.
     auto tr = thumbnails[press_view];
+    press_view->get_transformed_node()->begin_transform_update();
     tr->translation_x = (float)(drag_orig_tx + (local.x - press_pos.x));
     tr->translation_y = (float)(drag_orig_ty + (local.y - press_pos.y));
-    output->render->damage_whole();
+    press_view->get_transformed_node()->end_transform_update();
 
     // Drop-target highlight: resolve from the dragged thumbnail's CENTER (not the cursor)
     // so what lights up is exactly what a drop would receive (Principle I). 002: this only
@@ -276,29 +280,19 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
             }
         }
 
+        // Also brightens the drop-target cell in the veil (expo's focus cue follows the drag),
+        // from the SAME resolved cluster as the highlight (Principle I), and now on the same
+        // ~120 ms fade -- 003 I0 closed 002's FR-011 deferral.
         set_drop_highlight(hl);
-
-        // Brighten the drop-target cell as the drag moves over it (expo's focus cue follows
-        // the drag), reusing the SAME resolved cluster as the border highlight (Principle
-        // I). Off any cell -> keep the current workspace bright. NOTE: this switch is still
-        // instant — see tasks.md "Deferred" for why the veil's bright cell does not fade.
-        if (dim_node)
-        {
-            dim_node->set_active(hl >= 0 ? hl : current_ws_index);
-        }
     }
 }
 
 void spread_overview_t::end_drag(wf::pointf_t release_local)
 {
-    set_drop_highlight(-1); // fade the drop-target highlight out
-
-    // Restore the idle focus cue (current workspace bright). On a real relocate, reflow()
-    // rebuilds the veil anyway; on a snap-back this is what un-brightens the drop target.
-    if (dim_node)
-    {
-        dim_node->set_active(current_ws_index);
-    }
+    // Fade the drop-target highlight out and restore the idle focus cue (current workspace
+    // bright). On a real relocate reflow() rebuilds the veil anyway; on a snap-back this is
+    // what un-brightens the drop target. Both move on one clock since 003 I0.
+    set_drop_highlight(current_ws_index);
 
     // Principle VI: the view vanished mid-drag -> nothing to move or snap back.
     if (!press_view || !press_view->is_mapped() || !thumbnails.count(press_view))

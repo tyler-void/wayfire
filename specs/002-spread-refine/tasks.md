@@ -175,7 +175,17 @@ own gate; I5 is explicitly deferrable.
 
 ## Deferred
 
-### FR-011, second half only — the dim veil's bright cell still switches instantly
+### ✅ FR-011, second half — CLOSED by 003 I0 (2026-10-31)
+
+**Resolved.** The dim veil's bright cell now fades, on the same ~120 ms clock as the highlight.
+What made it cheap is exactly what this note said was missing: 003's I0 replaced `dim_node_t`'s
+baked output-sized texture with per-cell `add_rect` draws, so a per-cell alpha ramp costs nothing
+and there is no 19.8 MB re-upload. The original deferral reasoning is kept below as the record of
+why it could not be done inside 002.
+
+---
+
+### (historical) FR-011, second half — the dim veil's bright cell still switches instantly
 
 **Shipped**: the drop-target *highlight* fades. It is now `highlight_node_t`, its own overlay
 node above the grid, drawing four solid rects through `render_pass_t::add_rect` with a fixed

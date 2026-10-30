@@ -254,3 +254,25 @@ all use — which is why several components can agree about a view's opacity, an
 wins* is the accepted semantics (constitution Principle V, amended in 1.4.0).
 
 **Delta vs 0.10.1**: not applicable — all four are cited from this tree only, per Principle IV.
+
+---
+
+## 8. Added for 003-spread-zoom (verified 2026-10-31 in this tree)
+
+**Solid-colour rects in a render pass** — `wf::render_pass_t::add_rect(const wf::color_t&, const
+wf::render_target_t&, const wf::geometry_t&, const wf::regionf_t&)`,
+`src/api/wayfire/render.hpp:659`. Used by every overlay node of spread-overview since 003 I0 (the
+veil, the grid and the drop highlight). The reason it matters: a node that draws rects can be
+scaled per frame for free — only its destination rects change — whereas a node that blits a baked
+**output-sized** texture cannot be scaled without re-rasterising it (19.8 MB at 3440×1440). That is
+what made the camera zoom feasible, and what let the veil's bright cell fade at all.
+
+**Scene-correct damage for a transform write** — `begin_transform_update()` /
+`end_transform_update()` on a view's transformed node, `src/api/wayfire/view-transform.hpp:270,276`.
+Wrapping a write to a `view_2d_transformer_t` lets the scene damage exactly the node's old and new
+bounding boxes. Without it the only correct fallback is `damage_whole()`, which repaints the entire
+output: the drag-follow path did that on **every pointer-motion event** until 003 I0.
+
+**Note on `wf::geometry_t`**: it is floating point on 0.12 (upstream "standardize floating-point
+rendering helpers"), so `rectf` fields pass straight into `add_rect`/`add_texture` with no rounding
+— the overlay nodes and `hit_test_cluster()` therefore use bit-identical geometry (Principle I).

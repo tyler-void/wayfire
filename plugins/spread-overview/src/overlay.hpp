@@ -31,11 +31,7 @@ class border_node_t : public wf::scene::node_t
 
         void render(const wf::scene::render_instruction_t& data)
         {
-            auto tex = self->tex.get_texture();
-            if (tex)
-            {
-                data.pass->add_texture(tex, data.target, self->geometry, data.damage, self->alpha);
-            }
+            self->render_lines(data);
         }
     };
 
@@ -72,13 +68,18 @@ class border_node_t : public wf::scene::node_t
     float alpha = 1.0f;
 
   private:
-    void rerender();
+    // 003 I0: build one rect per grid BOUNDARY — not four per cell. A boundary shared by two
+    // cells is therefore drawn exactly ONCE, at single thickness; four-rects-per-cell would
+    // paint every interior edge twice. (The cairo version stroked each cell and relied on the
+    // strokes coinciding, which is invisible at border alpha 1 but doubles below it.)
+    void build_lines();
+    void render_lines(const wf::scene::render_instruction_t& data);
 
     wf::geometry_t geometry{0, 0, 0, 0};
     std::vector<rectf> clusters;
+    std::vector<rectf> lines; // the grid, as boundary rects; rebuilt only on set_content
     int border_size = 2;
     wf::color_t border_color{0.9, 0.9, 0.9, 1.0};
-    wf::owned_texture_t tex;
 };
 
 // 002 (FR-011): the drop-target highlight, split out of border_node_t so it can FADE.
@@ -168,11 +169,7 @@ class dim_node_t : public wf::scene::node_t
 
         void render(const wf::scene::render_instruction_t& data)
         {
-            auto tex = self->tex.get_texture();
-            if (tex)
-            {
-                data.pass->add_texture(tex, data.target, self->geometry, data.damage, self->alpha);
-            }
+            self->render_veil(data);
         }
     };
 
@@ -203,21 +200,36 @@ class dim_node_t : public wf::scene::node_t
         std::vector<rectf> cluster_rects,
         wf::color_t veil, double inactive_brightness, int active_index);
 
-    // Re-point the bright (un-veiled) cluster. -1 = all cells dim. Re-renders on change.
-    void set_active(int cluster_index);
+    // Re-point the bright (un-veiled) cluster. -1 = all cells dim. Returns true when the
+    // target actually changed, i.e. when the caller should (re)start the cross-fade clock.
+    bool set_active(int cluster_index);
+
+    // Cross-fade position 0 -> 1, written every frame by the plugin's animation tick. It is
+    // driven by the SAME ~120 ms clock as the drop-target highlight, so the two focus cues
+    // move in lockstep. 003 I0: this is what closes 002's deferred FR-011 — the bright cell
+    // can fade now that the veil is rects instead of one baked output-sized texture.
+    void set_progress(double p);
 
     // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
 
   private:
-    void rerender();
+    void render_veil(const wf::scene::render_instruction_t& data);
+    // Veil strength for one cell: 0 = fully bright, 1 = fully dim, interpolated mid-fade.
+    double cell_veil(int index) const;
+    // Exact, NON-OVERLAPPING cover for the gaps and margins (cluster_gap > 0). Alpha
+    // compositing cannot subtract, so the veil cannot be "fill everything, punch a hole":
+    // the inactive cells are drawn, plus these strips. They are split so a horizontal and a
+    // vertical gap never paint the same pixel twice (which would read as a darker cross).
+    void build_strips();
 
     wf::geometry_t geometry{0, 0, 0, 0};
     std::vector<rectf> clusters;
+    std::vector<rectf> strips;
     wf::color_t veil_color{0.0, 0.0, 0.0, 1.0};
     double inactive_brightness = 0.7;
-    int active = -1;
-    wf::owned_texture_t tex;
+    int active = -1, prev_active = -1;
+    double progress = 1.0;
 };
 
 // Per-cell wallpaper (US-wallpaper / B2). Blits ONE already-loaded image (the desktop

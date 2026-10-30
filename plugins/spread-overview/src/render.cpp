@@ -430,15 +430,31 @@ void spread_overview_t::animate_step()
     // drag moves between cells.
     if (highlight_fade.running())
     {
+        const double p = (double)highlight_fade;
         if (highlight_node)
         {
-            highlight_node->set_progress((double)highlight_fade);
+            highlight_node->set_progress(p);
+        }
+
+        if (dim_node)
+        {
+            dim_node->set_progress(p); // 003 I0: the veil fades with it
         }
 
         any_running = true;
-    } else if (highlight_node)
+    } else
     {
-        highlight_node->set_progress(1.0); // settle: the incoming cell fully in
+        // settle: the incoming cell fully in. Both setters early-return when unchanged, so
+        // this costs nothing on the frames where no fade is running.
+        if (highlight_node)
+        {
+            highlight_node->set_progress(1.0);
+        }
+
+        if (dim_node)
+        {
+            dim_node->set_progress(1.0);
+        }
     }
 
     if (any_running)
@@ -560,7 +576,16 @@ void spread_overview_t::set_drop_highlight(int cluster_index)
         return;
     }
 
-    if (highlight_node->set_highlight(cluster_index))
+    // 003 I0: the veil's bright cell retargets on the SAME clock, so the two focus cues move
+    // in lockstep. Before I0 the veil could only snap, because it was one baked output-sized
+    // texture -- which is exactly why 002 deferred FR-011's second half.
+    bool changed = highlight_node->set_highlight(cluster_index);
+    if (dim_node && dim_node->set_active(cluster_index >= 0 ? cluster_index : current_ws_index))
+    {
+        changed = true;
+    }
+
+    if (changed)
     {
         highlight_fade.animate(0.0, 1.0);
         ensure_anim_hook();
@@ -660,8 +685,9 @@ void spread_overview_t::handle_view_unmapped(wayfire_toplevel_view view)
         dragging   = false;
         pressed    = false;
         press_view = nullptr;
-        set_drop_highlight(-1); // fade the drop-target highlight out
-        if (dim_node)    { dim_node->set_active(current_ws_index); }
+        // Fades the highlight out and returns the veil's bright cell to the current
+        // workspace in one call (003 I0 unified the two cues onto one clock).
+        set_drop_highlight(-1);
     }
 
     forget_view(view); // scrub the dead pointer NOW, before it is destroyed
