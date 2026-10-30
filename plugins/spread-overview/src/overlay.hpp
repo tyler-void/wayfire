@@ -64,7 +64,16 @@ class border_node_t : public wf::scene::node_t
         std::vector<rectf> cluster_rects,
         int border_size, wf::color_t border_color);
 
-    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    // 003 I2: the camera. Every overlay node maps its DESTINATION rects through it, which is
+    // why I0's rect conversion was a prerequisite: a baked output-sized texture cannot be
+    // scaled without re-rasterising it. Identity (t = 0) while the overview sits still.
+    void set_camera(const camera_t& c)
+    {
+        cam = c;
+        wf::scene::damage_node(this->shared_from_this(), geometry);
+    }
+
+    // Overlay opacity, driven by the exit fade. 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
 
   private:
@@ -76,6 +85,7 @@ class border_node_t : public wf::scene::node_t
     void render_lines(const wf::scene::render_instruction_t& data);
 
     wf::geometry_t geometry{0, 0, 0, 0};
+    camera_t cam; // identity until the camera animates
     std::vector<rectf> clusters;
     std::vector<rectf> lines; // the grid, as boundary rects; rebuilt only on set_content
     int border_size = 2;
@@ -139,13 +149,23 @@ class highlight_node_t : public wf::scene::node_t
     // Cross-fade position, 0 -> 1. Written every frame by the plugin's animation tick.
     void set_progress(double p);
 
-    // Overlay opacity, driven by the exit fade — same as the other overlay nodes.
+    // 003 I2: the camera. Every overlay node maps its DESTINATION rects through it, which is
+    // why I0's rect conversion was a prerequisite: a baked output-sized texture cannot be
+    // scaled without re-rasterising it. Identity (t = 0) while the overview sits still.
+    void set_camera(const camera_t& c)
+    {
+        cam = c;
+        wf::scene::damage_node(this->shared_from_this(), geometry);
+    }
+
+    // Overlay opacity, driven by the exit fade. 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
 
   private:
     void render_cell(const wf::scene::render_instruction_t& data, int index, double a);
 
     wf::geometry_t geometry{0, 0, 0, 0};
+    camera_t cam; // identity until the camera animates
     std::vector<rectf> clusters;
     int size = 4;
     wf::color_t color{0.3, 0.6, 1.0, 1.0};
@@ -210,7 +230,16 @@ class dim_node_t : public wf::scene::node_t
     // can fade now that the veil is rects instead of one baked output-sized texture.
     void set_progress(double p);
 
-    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    // 003 I2: the camera. Every overlay node maps its DESTINATION rects through it, which is
+    // why I0's rect conversion was a prerequisite: a baked output-sized texture cannot be
+    // scaled without re-rasterising it. Identity (t = 0) while the overview sits still.
+    void set_camera(const camera_t& c)
+    {
+        cam = c;
+        wf::scene::damage_node(this->shared_from_this(), geometry);
+    }
+
+    // Overlay opacity, driven by the exit fade. 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
 
   private:
@@ -224,6 +253,7 @@ class dim_node_t : public wf::scene::node_t
     void build_strips();
 
     wf::geometry_t geometry{0, 0, 0, 0};
+    camera_t cam; // identity until the camera animates
     std::vector<rectf> clusters;
     std::vector<rectf> strips;
     wf::color_t veil_color{0.0, 0.0, 0.0, 1.0};
@@ -261,7 +291,12 @@ class wallpaper_node_t : public wf::scene::node_t
             // in set_content (cells are uniform), so all cells show an undistorted crop.
             for (const auto& cell : self->cells)
             {
-                data.pass->add_texture(self->tex, data.target, cell, data.damage, self->alpha);
+                // Destination through the camera; the source box (the cover-crop) is
+                // untouched, so the tile scales without re-cropping.
+                const auto m = camera_rect(self->cam,
+                    rectf{cell.x, cell.y, cell.width, cell.height});
+                data.pass->add_texture(self->tex, data.target,
+                    wf::geometry_t{m.x, m.y, m.w, m.h}, data.damage, self->alpha);
             }
         }
     };
@@ -293,11 +328,21 @@ class wallpaper_node_t : public wf::scene::node_t
         std::vector<rectf> cell_rects,
         std::shared_ptr<wf::texture_t> texture, wf::dimensions_t tex_size);
 
-    // Overlay opacity, driven by the exit fade (T027 A2). 1 = opaque, 0 = fully faded out.
+    // 003 I2: the camera. Every overlay node maps its DESTINATION rects through it, which is
+    // why I0's rect conversion was a prerequisite: a baked output-sized texture cannot be
+    // scaled without re-rasterising it. Identity (t = 0) while the overview sits still.
+    void set_camera(const camera_t& c)
+    {
+        cam = c;
+        wf::scene::damage_node(this->shared_from_this(), geometry);
+    }
+
+    // Overlay opacity, driven by the exit fade. 1 = opaque, 0 = fully faded out.
     float alpha = 1.0f;
 
   private:
     wf::geometry_t geometry{0, 0, 0, 0};
+    camera_t cam; // identity until the camera animates
     std::vector<wf::geometry_t> cells;
     std::shared_ptr<wf::texture_t> tex;
 };

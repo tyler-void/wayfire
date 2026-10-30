@@ -966,3 +966,36 @@ TEST_CASE("camera: randomized properties over many grids, outputs and pivots")
     MESSAGE("camera property checks: " << checked);
     CHECK(checked >= 4000);
 }
+
+TEST_CASE("camera: camera_rect agrees with camera_apply + camera_scale")
+{
+    const dimf out{3440, 1440};
+    auto cells = grid_cells({3, 3}, out);
+    const rectf probe{300.0, 200.0, 640.0, 480.0};
+
+    for (const auto& cell : cells)
+    {
+        for (double t : {0.0, 0.3, 0.7, 1.0})
+        {
+            auto cam = cam_of(cell, out, t);
+            auto m = camera_rect(cam, probe);
+            const double k = camera_scale(cam);
+            auto c = camera_apply(cam, pointf{probe.x + probe.w / 2.0, probe.y + probe.h / 2.0});
+
+            INFO("t=" << t);
+            CHECK(m.w == doctest::Approx(probe.w * k));
+            CHECK(m.h == doctest::Approx(probe.h * k));
+            CHECK((m.x + m.w / 2.0) == doctest::Approx(c.x));
+            CHECK((m.y + m.h / 2.0) == doctest::Approx(c.y));
+            // aspect preserved for all t (#C3 at rect level)
+            CHECK((m.w / m.h) == doctest::Approx(probe.w / probe.h));
+        }
+
+        // t = 0 is the identity on rects too (#C1)
+        auto id = camera_rect(cam_of(cell, out, 0.0), probe);
+        CHECK(id.x == probe.x);
+        CHECK(id.y == probe.y);
+        CHECK(id.w == probe.w);
+        CHECK(id.h == probe.h);
+    }
+}

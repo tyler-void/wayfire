@@ -77,10 +77,11 @@ void border_node_t::render_lines(const wf::scene::render_instruction_t& data)
     col.a *= alpha; // the exit dissolve
     for (const auto& l : lines)
     {
-        if ((l.w > 0) && (l.h > 0))
+        const auto m = camera_rect(cam, l); // scales with the zoom, thickness included
+        if ((m.w > 0) && (m.h > 0))
         {
             data.pass->add_rect(col, data.target,
-                wf::geometry_t{l.x, l.y, l.w, l.h}, data.damage);
+                wf::geometry_t{m.x, m.y, m.w, m.h}, data.damage);
         }
     }
 }
@@ -255,8 +256,9 @@ void dim_node_t::render_veil(const wf::scene::render_instruction_t& data)
 
         auto col = veil_color;
         col.a = a;
+        const auto m = camera_rect(cam, r);
         data.pass->add_rect(col, data.target,
-            wf::geometry_t{r.x, r.y, r.w, r.h}, data.damage);
+            wf::geometry_t{m.x, m.y, m.w, m.h}, data.damage);
     };
 
     for (size_t i = 0; i < clusters.size(); i++)
@@ -326,9 +328,10 @@ void highlight_node_t::render_cell(const wf::scene::render_instruction_t& data,
 
     // wf::geometry_t is floating point on 0.12 (upstream "standardize floating-point
     // rendering helpers"), so the rects stay in double — no rounding needed.
-    const auto& c = clusters[index];
-    const double x = c.x, y = c.y, w = c.w, h = c.h;
-    const double s = std::min((double)size, std::min(w, h) / 2.0);
+    const auto mc = camera_rect(cam, clusters[index]);
+    const double x = mc.x, y = mc.y, w = mc.w, h = mc.h;
+    // the stroke scales with the zoom too, so the highlight stays proportional to its cell
+    const double s = std::min((double)size * camera_scale(cam), std::min(w, h) / 2.0);
 
     // Four strokes INSIDE the cell edges, so the highlight never bleeds into a neighbour
     // (the grid strokes sit centred on the shared edge; this one must not paint over it).

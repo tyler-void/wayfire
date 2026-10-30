@@ -480,6 +480,15 @@ pointf camera_apply(const camera_t& cam, pointf p)
     return pointf{(p.x - cx) * k + ax, (p.y - cy) * k + ay};
 }
 
+rectf camera_rect(const camera_t& cam, const rectf& r)
+{
+    const double k = camera_scale(cam);
+    auto c = camera_apply(cam, pointf{r.x + r.w / 2.0, r.y + r.h / 2.0});
+    const double w = r.w * k;
+    const double h = r.h * k;
+    return rectf{c.x - w / 2.0, c.y - h / 2.0, w, h};
+}
+
 std::optional<ivec2> hit_test_cluster(const layout_result& r, double px, double py)
 {
     for (auto& c : r.clusters)

@@ -87,6 +87,11 @@ double camera_scale(const camera_t& cam);
 // Map an overview-space point to the screen. At t = 0 this returns `p` bit-exactly (#C1).
 pointf camera_apply(const camera_t& cam, pointf p);
 
+// Map a whole rect: its centre through camera_apply, its size by camera_scale. This is the
+// single definition the plugin uses for BOTH thumbnails (via the view transformer) and the
+// overlay nodes' destination rects, so they can never disagree about where the camera is.
+rectf camera_rect(const camera_t& cam, const rectf& r);
+
 // Inverse of the cluster regions produced by layout(); shares the same geometry.
 // Returns the workspace whose cluster region contains (px,py), or nullopt if the
 // point is in a gap / margin / outside all clusters (caller treats as snap-back).

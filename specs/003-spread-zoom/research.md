@@ -176,6 +176,36 @@ viewport.
 
 ---
 
+## R-210 — The close must switch the viewport FIRST, then zoom (INFERRED, found while wiring I2)
+
+FR-005 says the destination workspace's windows arrive at their **real desktop positions**. The
+exit path expresses that as "settle to identity" (scale 1, no translation) — which was correct in
+002 only because the destination was always the **current** workspace.
+
+With FR-002, the destination can be a *different* workspace. A view's `get_geometry()` is in the
+**current viewport's** frame, so a window belonging to another workspace has real geometry that is
+off-screen (±output size). Settling it to identity while the viewport is still on the old workspace
+would animate it **off the screen** — the opposite of a seamless hand-off.
+
+**Required order for a close that changes workspace:**
+
+1. Snapshot every thumbnail's on-screen rect (`snapshot_thumb_screen_rects`, already exists).
+2. `set_workspace(destination)` — instant, no vswitch (R-209).
+3. **Re-express** each thumbnail's transform against its NEW geometry so the rendered rect is
+   unchanged — nothing moves visually. This is exactly the trick the REFLOW path already uses
+   ("re-expressed against the view's NEW geometry so the rendered rect starts unchanged").
+4. Recompute `current_ws_index` (the veil's bright cell) and pivot the camera on the destination
+   cell, which is now the current workspace's cell.
+5. Run the camera `t: 0 → 1`; the pivot cell's windows settle to identity, now meaning on-screen.
+
+**Second consequence**: the two routes the user cares about most — clicking a window on another
+workspace, and clicking an empty cell — currently call `deactivate(false)`, i.e. they tear down
+**instantly with no animation at all**. The zoom would never play on them. They must become
+animated closes (`deactivate(true)`), with the workspace switched up front per the order above.
+That is a deliberate behaviour change from 001/002, and the reason those routes feel abrupt today.
+
+---
+
 ## R-207 — Reflow stays as it is (VERIFIED scope boundary)
 
 The stay-open re-flow after a relocate keeps gliding each thumbnail from its pre-relocate
