@@ -151,6 +151,10 @@ void spread_overview_t::build_spread(spread_anim anim)
         camera_t_applied = -1.0;
         camera_clock = std::make_unique<wf::animation::simple_animation_t>(opt_duration);
         camera_clock->animate(1.0, 0.0);
+        // Greppable evidence that the camera armed and on which cell, so "was there a camera?"
+        // is never again something to infer from the absence of a failure message.
+        LOGI("spread-overview: entry camera armed, pivot cluster ", camera_pivot_index,
+            " ws (", cws.x, ",", cws.y, "), t 1->0");
     }
 
     for (auto& vo : result.views)
@@ -342,7 +346,16 @@ void spread_overview_t::build_spread(spread_anim anim)
 
     // T027: if we set up transitions (entry or reflow), install the per-frame tick hook and
     // kick a redraw so the clocks advance. animate_step removes the hook once they all settle.
-    if ((anim != spread_anim::NONE) && !anim_state.empty())
+    //
+    // 003: the CAMERA needs that tick too — and it needs it even when there is not a single
+    // thumbnail, because then the chrome (veil, wallpaper tiles, grid) is the only thing the
+    // camera moves. Gating purely on anim_state is a 001-era condition, from when the per-view
+    // clocks were the only animation in existence; an empty workspace set made the entire open
+    // play with no animation at all, since animate_step is what ticks the camera. This is the
+    // same condition start_exit_anim already used — the open had simply been left behind, which
+    // is also why the close animated in that session and the open did not.
+    if (((anim != spread_anim::NONE) && !anim_state.empty()) ||
+        (camera_clock && camera_clock->running()))
     {
         ensure_anim_hook();
     }
