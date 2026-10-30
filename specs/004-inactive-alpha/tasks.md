@@ -53,8 +53,8 @@ would put the tree in violation of its own governance.
 - [X] K020 [US3] Mark `docs/ipc-scripts/inactive-alpha.py` superseded in a header comment (what replaced it, when, and that it is kept as reference per FR-012); leave the file otherwise untouched
 - [X] K021 [P] [US3] Add the plugin to `FEATURES.md` under a new entry: what it does, that it replaced an IPC daemon, and the "any plugin suppresses dimming" design with the bug it removes
 - [X] K022 [P] [US3] Write `plugins/inactive-alpha/README.md`: the option, the suppression rule, and the two accepted interactions — a manual per-window opacity is overridden at the next focus change, and the overview's own opaque-forcing is unaffected
-- [ ] K023 🛑 **tty2 gate** — present quickstart §J3 (fresh session, no helper process, SC-005/006/007) and **STOP** for the user's sign-off
-- [ ] K024 Final report: files changed per increment, test output, the `vswitch` observation, and what remains. Merging and pushing are the user's decision — **ask before every push**
+- [X] K023 🛑 **tty2 gate** — present quickstart §J3 (fresh session, no helper process, SC-005/006/007) and **STOP** for the user's sign-off
+- [X] K024 Final report: files changed per increment, test output, the `vswitch` observation, and what remains. Merging and pushing are the user's decision — **ask before every push**
 
 ---
 
