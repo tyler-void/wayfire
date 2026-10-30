@@ -108,10 +108,17 @@ void spread_overview_t::snap_into_workspace(wayfire_toplevel_view view, wf::poin
 
 void spread_overview_t::switch_workspace(wf::point_t target_ws)
 {
-    // Empty-cell click -> go to that workspace (expo behavior). Called after deactivate(),
-    // so the overview is already closing when the viewport change (with vswitch animation)
-    // fires.
-    output->wset()->request_workspace(target_ws);
+    // The only workspace-switch contact in the plugin (Principle II). Called from
+    // handoff_viewport() at the start of an animated close, which then re-expresses every
+    // thumbnail so the frame is unchanged across the switch.
+    //
+    // 003 (R-209): set_workspace, NOT request_workspace. request_workspace emits
+    // workspace_change_request_signal, which vswitch answers with an animated delta slide --
+    // so the cell would zoom in while vswitch simultaneously slid the viewport sideways,
+    // which is exactly the "being dragged to another workspace instead of that workspace
+    // zooming in to me" reported at the I0 gate. set_workspace changes the viewport
+    // instantly and leaves the camera as the only motion, the same way expo.cpp:349 does it.
+    output->wset()->set_workspace(target_ws);
 }
 } // namespace spread
 } // namespace wf

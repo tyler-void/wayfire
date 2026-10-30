@@ -128,27 +128,26 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
         LOGI("spread-overview: click at (", local.x, ",", local.y, ") -> focus + close;",
             " view ws (", target_ws.x, ",", target_ws.y, ") current ws (",
             cur_ws.x, ",", cur_ws.y, ")");
-        deactivate(false); // navigating (focus/raise, maybe switch ws) -> close immediately
+        // 003 (T022c/T023): this route used to tear the overview down INSTANTLY -- which is
+        // why clicking a window never had an animation at all. It is now an ANIMATED close
+        // that zooms into the clicked window's workspace. Choosing the pivot is all this route
+        // does; start_exit_anim owns the rest, including the viewport handoff (R-210), so the
+        // explicit switch that used to live here has moved there.
+        exit_target_ws = target_ws;
+        deactivate(true);
         if (target && target->is_mapped())
         {
-            // Switch workspace EXPLICITLY, exactly as scale does (scale.cpp:410-411:
-            // `request_workspace(get_view_main_workspace(view))` followed by a
-            // focus_raise_view that does NOT switch).
-            //
-            // We must NOT use focus_raise_view(.., allow_switch_ws=true) here: that routes
-            // through output_t::ensure_visible() (output.cpp:195), which decides from the
-            // view's BOUNDING BOX and returns early when >= 10% of it is on screen --
+            // allow_switch_ws stays FALSE, as scale does it (scale.cpp:410-411), and now for a
+            // second reason: the handoff has already put us on target_ws. It must never become
+            // true -- focus_raise_view(.., true) routes through output_t::ensure_visible()
+            // (output.cpp:195), which decides from the view's BOUNDING BOX and returns early
+            // once >= 10% of it is on screen --
             //   if (area >= 0.1) /* View is somewhat visible */ return false;
-            // In the overview the clicked window is drawn as a thumbnail that is fully on
-            // screen, so ensure_visible concluded "no need to switch" and clicking a window
-            // from another workspace focused it WITHOUT going to its workspace. 002 made this
-            // reachable far more often: with per-window scaling a lone window nearly fills
-            // its cell, so clicking "that workspace" almost always lands on the thumbnail.
-            if ((target_ws.x != cur_ws.x) || (target_ws.y != cur_ws.y))
-            {
-                switch_workspace(target_ws);
-            }
-
+            // In the overview every thumbnail is fully on screen, so it concluded "no need to
+            // switch" and clicking a window from another workspace focused it WITHOUT going to
+            // its workspace (the bug fixed in 46f31453). 002 made that reachable far more
+            // often: with per-window scaling a lone window nearly fills its cell, so clicking
+            // "that workspace" almost always lands on the thumbnail.
             wf::get_core().default_wm->focus_raise_view(target, false);
         }
     }
@@ -165,8 +164,10 @@ void spread_overview_t::handle_pointer_button(const wlr_pointer_button_event& ev
             LOGI("spread-overview: empty click at (", local.x, ",", local.y,
                 ") -> switch to ws (", tgt->x, ",", tgt->y, ") from (",
                 cur_ws.x, ",", cur_ws.y, ")");
-            deactivate(false); // switching workspace -> close immediately, then switch
-            switch_workspace(wf::point_t{tgt->x, tgt->y});
+            // 003 (T022c): likewise animated now — the camera zooms into the cell that was
+            // clicked, and start_exit_anim hands the viewport over on the way (R-210).
+            exit_target_ws = wf::point_t{tgt->x, tgt->y};
+            deactivate(true);
         }
         else
         {

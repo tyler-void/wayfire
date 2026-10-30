@@ -22,6 +22,7 @@
 #include <memory>
 #include <vector>
 #include <map>
+#include <optional>
 
 #include "layout.hpp"
 #include "overlay.hpp"
@@ -185,6 +186,23 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // away at teardown. Driven by the same `duration`; only runs during an animated close.
     wf::animation::simple_animation_t overlay_fade{opt_exit_duration};
 
+    // 003 (I2): the overview CAMERA — the zoom itself. `camera` carries the pivot cell, the
+    // output size and `t`; `camera_pivot_index` is the cluster the pivot came from, so the
+    // chrome and the "is this view camera-driven?" test can never disagree. Both are reset by
+    // clear_spread, and `t` is 0 (the exact identity, #C1) whenever no direction is playing —
+    // which is why ACTIVE/DRAGGING are untouched by the camera's existence.
+    camera_t camera;
+    int camera_pivot_index = -1;
+    // Drives camera.t. Rebuilt per direction because a duration_t's length is fixed at
+    // construction and FR-008 forbids a new option: a close reads `exit_duration`, an open
+    // (I3) will read `duration`. A unique_ptr rather than a member value because
+    // simple_animation_t binds its transition to *this, so the object must never be moved.
+    std::unique_ptr<wf::animation::simple_animation_t> camera_clock;
+    // 003 (FR-002): the workspace an animated close zooms INTO. Set by the dismissal route
+    // just before deactivate(true); unset means "the current one" (Esc / toggle / cancel).
+    // Consumed (and cleared) by start_exit_anim, so it can never leak into the next session.
+    std::optional<wf::point_t> exit_target_ws;
+
     // 002 (FR-011): the highlight cross-fade clock. A literal-valued option, the same way
     // plugins/common's preview-indication builds its fixed 200 ms animation.
     static constexpr int HIGHLIGHT_FADE_MS = 120;
@@ -264,6 +282,17 @@ class spread_overview_t : public wf::per_output_plugin_instance_t,
     // cross-fade when it actually changed. The single place input.cpp calls while dragging.
     void set_drop_highlight(int cluster_index);
     void start_exit_anim(); // A2: animate every thumbnail back to its real position (identity)
+
+    // 003 (I2). set_camera_pivot points the camera at the cluster of `ws` and returns false,
+    // leaving the camera at the identity, when that cluster is unknown — fail-soft, so a close
+    // degrades to 002's plain fade rather than failing. push_camera_to_overlays hands the SAME
+    // camera to the four chrome nodes each frame, so the chrome and the thumbnails cannot
+    // drift apart. handoff_viewport implements research R-210: move the viewport to `dest`
+    // instantly and re-express every thumbnail against its moved geometry, so the frame looks
+    // identical across the switch and only the camera animates.
+    bool set_camera_pivot(wf::point_t ws);
+    void push_camera_to_overlays();
+    void handoff_viewport(wf::point_t dest);
 
     // T028: a session view unmapped mid-overview. forget_view scrubs the dead observer_ptr from
     // every map (+ disconnects it); handle_view_unmapped ends any drag on it, then reflows the

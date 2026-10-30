@@ -354,6 +354,13 @@ void spread_overview_t::clear_spread()
     }
     current_ws_index = -1;
 
+    // 003: the camera is session state. Dropping the clock here is what guarantees the next
+    // session starts at the exact identity (#C1) rather than inheriting a finished zoom.
+    camera = camera_t{};
+    camera_pivot_index = -1;
+    camera_clock.reset();
+    exit_target_ws.reset();
+
     for (auto& [v, tr] : thumbnails)
     {
         if (v && v->is_mapped())
@@ -389,6 +396,26 @@ void spread_overview_t::clear_spread()
 void spread_overview_t::animate_step()
 {
     bool any_running = false;
+
+    // 003 (T020): tick the CAMERA first — every camera-driven thumbnail and all four chrome
+    // nodes read it below, so it must be current before anything composes against it. The
+    // camera only exists while a direction is playing; outside that camera_pivot_index is -1
+    // and this whole block is skipped, leaving 002's behaviour bit-for-bit.
+    const bool cam_live = camera_clock && (camera_pivot_index >= 0) &&
+        (camera_pivot_index < (int)current_layout.clusters.size());
+    wf::point_t pivot_ws{-1, -1};
+    if (cam_live)
+    {
+        camera.t = (double)*camera_clock;
+        auto& pc = current_layout.clusters[camera_pivot_index];
+        pivot_ws = wf::point_t{pc.ws.x, pc.ws.y};
+        push_camera_to_overlays();
+        if (camera_clock->running())
+        {
+            any_running = true;
+        }
+    }
+
     for (auto& [v, a] : anim_state)
     {
         auto it = thumbnails.find(v);
@@ -398,11 +425,46 @@ void spread_overview_t::animate_step()
         }
 
         auto tr = it->second;
+
+        // The clock's interpolated slot<->identity values: the BASE transform for this frame.
+        double sx = (double)a.scale_x, sy = (double)a.scale_y;
+        double tx = (double)a.translation_x, ty = (double)a.translation_y;
+
+        // 003 (T021): the view's ROLE, derived every frame and never stored, so a view that was
+        // relocated or unmapped cannot carry a stale one (Principle VI):
+        //   pivot cell    -> SETTLING. Left exactly as 002 wrote it: it interpolates to identity,
+        //                    i.e. to the window's real desktop position. The camera must NOT be
+        //                    applied here — a slot position is a PACKED position, so mapping it
+        //                    through the camera would land the window where the layout put it,
+        //                    blown up, instead of where it really lives (FR-005).
+        //   anything else -> CAMERA-DRIVEN. Its slot rect is mapped through the camera, so it
+        //                    rides outward as the pivot cell grows to fill the screen.
+        if (cam_live)
+        {
+            auto mw = output->wset()->get_view_main_workspace(v);
+            if ((mw.x != pivot_ws.x) || (mw.y != pivot_ws.y))
+            {
+                auto vg = v->get_geometry();
+                const double vw = std::max(1.0, (double)vg.width);
+                const double vh = std::max(1.0, (double)vg.height);
+                const double w  = vw * sx, h = vh * sy;
+                const double cx = (vg.x + vg.width / 2.0) + tx;
+                const double cy = (vg.y + vg.height / 2.0) + ty;
+                // camera_rect is the SAME mapping the chrome nodes use (overlay.hpp), which is
+                // why a thumbnail and the cell drawn behind it stay locked together.
+                auto m = camera_rect(camera, rectf{cx - w / 2.0, cy - h / 2.0, w, h});
+                sx = m.w / vw;
+                sy = m.h / vh;
+                tx = (m.x + m.w / 2.0) - (vg.x + vg.width / 2.0);
+                ty = (m.y + m.h / 2.0) - (vg.y + vg.height / 2.0);
+            }
+        }
+
         v->get_transformed_node()->begin_transform_update();
-        tr->scale_x = (float)(double)a.scale_x;
-        tr->scale_y = (float)(double)a.scale_y;
-        tr->translation_x = (float)(double)a.translation_x;
-        tr->translation_y = (float)(double)a.translation_y;
+        tr->scale_x = (float)sx;
+        tr->scale_y = (float)sy;
+        tr->translation_x = (float)tx;
+        tr->translation_y = (float)ty;
         tr->alpha = (float)(double)a.alpha;
         v->get_transformed_node()->end_transform_update();
 
@@ -482,11 +544,44 @@ void spread_overview_t::start_exit_anim()
 {
     anim_state.clear();
 
-    // Destination-aware exit (research: fade, don't fly). On a dismiss the destination is the
-    // current viewport: its windows SETTLE back to their real positions (staying opaque), while
-    // every OTHER workspace's windows FADE OUT in place — no ballooning off-screen, and an
-    // empty destination just clears calmly instead of a flock of windows flying past.
+    // 003 (R-210): resolve the DESTINATION first, and hand the viewport over before computing
+    // anything. The order matters and is not interchangeable: "settle to identity" only means
+    // "arrive at the real on-screen position" once the viewport is already on the destination,
+    // because a view's geometry is expressed in the current viewport's frame. Doing it the
+    // other way round animates the destination's windows straight off the screen.
+    auto dest = exit_target_ws.value_or(output->wset()->get_current_workspace());
+    exit_target_ws.reset(); // consumed — never allowed to leak into the next session
     auto cws = output->wset()->get_current_workspace();
+    if ((dest.x != cws.x) || (dest.y != cws.y))
+    {
+        handoff_viewport(dest);
+        cws = output->wset()->get_current_workspace();
+    }
+
+    // 003 (FR-002): the camera converges on the destination cell, which the handoff just made
+    // the current one. Fail-soft: an unknown cell leaves the camera at the identity and the
+    // close degrades to exactly 002's fade.
+    if (set_camera_pivot(cws))
+    {
+        camera_clock = std::make_unique<wf::animation::simple_animation_t>(opt_exit_duration);
+        camera_clock->animate(0.0, 1.0);
+    }
+
+    // The per-cluster labels are the one piece of chrome that is NOT camera-aware (they are
+    // upstream simple_text_node_t). Rather than let them hang motionless in mid-air while
+    // everything else zooms, drop them at the start of the close. Before 003 they stayed fully
+    // opaque and then snapped away at teardown, which the fade never covered either.
+    for (auto& label : label_nodes)
+    {
+        wf::scene::remove_child(label);
+    }
+
+    label_nodes.clear();
+
+    // Destination-aware exit (research: fade, don't fly). The destination's windows SETTLE back
+    // to their real positions (staying opaque); every OTHER workspace's windows hold their slot
+    // transform, which the camera then carries outward as it fills the screen, and fade as they
+    // go — no ballooning off-screen, and an empty destination just clears calmly.
 
     for (auto& [v, tr] : thumbnails)
     {
@@ -511,7 +606,9 @@ void spread_overview_t::start_exit_anim()
         }
         else
         {
-            // Fade out where it sits — hold the transform, drop opacity to 0.
+            // Hold the slot transform and drop opacity to 0. With a camera running, animate_step
+            // maps this held rect through it every frame (T021), so the window rides outward
+            // with its cell instead of fading in place; with no camera it is 002's fade exactly.
             a.scale_x.set(tr->scale_x, tr->scale_x);
             a.scale_y.set(tr->scale_y, tr->scale_y);
             a.translation_x.set(tr->translation_x, tr->translation_x);
@@ -526,10 +623,121 @@ void spread_overview_t::start_exit_anim()
     // animate_step) so the whole overview dissolves rather than the grid snapping at teardown.
     overlay_fade.animate(1.0, 0.0);
 
-    if (!anim_state.empty() || overlay_fade.running())
+    if (!anim_state.empty() || overlay_fade.running() ||
+        (camera_clock && camera_clock->running()))
     {
         ensure_anim_hook();
     }
+}
+
+// 003 (I2): point the camera at the cluster occupied by `ws`. The pivot rect is the cluster's
+// region straight out of layout(), so the camera converges on exactly the cell that was drawn
+// (Principle I — one geometry, no second opinion). Returns false and leaves the camera at the
+// identity if there is no such cluster, which keeps the close working rather than failing.
+bool spread_overview_t::set_camera_pivot(wf::point_t ws)
+{
+    camera = camera_t{};
+    camera_pivot_index = -1;
+
+    auto og = output->get_relative_geometry();
+    for (size_t i = 0; i < current_layout.clusters.size(); i++)
+    {
+        auto& c = current_layout.clusters[i];
+        if ((c.ws.x == ws.x) && (c.ws.y == ws.y))
+        {
+            camera_pivot_index = (int)i;
+            camera.pivot  = c.region;
+            camera.output = dimf{(double)og.width, (double)og.height};
+            camera.t      = 0.0; // #C1: the identity until the clock moves it
+            return true;
+        }
+    }
+
+    LOGI("spread-overview: no cluster for ws (", ws.x, ",", ws.y,
+        ") — camera stays at identity");
+    return false;
+}
+
+// Hand the SAME camera to all four chrome nodes. One call site, so the chrome can never be a
+// frame behind the thumbnails; each setter damages its own node.
+void spread_overview_t::push_camera_to_overlays()
+{
+    if (dim_node)       { dim_node->set_camera(camera); }
+    if (wallpaper_node) { wallpaper_node->set_camera(camera); }
+    if (border_node)    { border_node->set_camera(camera); }
+    if (highlight_node) { highlight_node->set_camera(camera); }
+}
+
+// 003 (R-210): move the viewport to `dest` with no motion of its own, leaving the frame looking
+// identical. Two verified facts make this both necessary and cheap:
+//
+//  1. wset->set_workspace() MOVES every non-sticky view by (old - new) * output_size
+//     (src/output/workspace-impl.cpp:594-617) and does not go through
+//     workspace_change_request_signal, so vswitch never sees it — the switch is instant and the
+//     camera stays the only motion (R-209, the same reason expo.cpp:349 uses it). The actual
+//     call goes through switch_workspace() in move.cpp, which stays the only workspace-switch
+//     contact (Principle II).
+//  2. A thumbnail's rendered rect is view geometry + transformer translation. So subtracting the
+//     view's own movement from its translation leaves the rendered rect bit-identical. Measured
+//     per view rather than assumed from the viewport delta, because sticky views do not move at
+//     all and would otherwise be displaced by a correction they never needed.
+void spread_overview_t::handoff_viewport(wf::point_t dest)
+{
+    // pointf, not wf::point_t: wf::geometry_t is FLOATING-POINT on 0.12, so an int point here
+    // would quantize the delta and shift every thumbnail by the sub-pixel remainder.
+    std::map<wayfire_toplevel_view, pointf> before;
+    for (auto& [v, tr] : thumbnails)
+    {
+        if (v && v->is_mapped())
+        {
+            auto g = v->get_geometry();
+            before[v] = pointf{(double)g.x, (double)g.y};
+        }
+    }
+
+    switch_workspace(dest);
+
+    for (auto& [v, tr] : thumbnails)
+    {
+        auto it = before.find(v);
+        if (!v || !v->is_mapped() || (it == before.end()))
+        {
+            continue; // Principle VI
+        }
+
+        auto g = v->get_geometry();
+        const double dx = (double)g.x - it->second.x;
+        const double dy = (double)g.y - it->second.y;
+        if ((dx == 0.0) && (dy == 0.0))
+        {
+            continue; // sticky / fixed: it did not move, so nothing to undo
+        }
+
+        v->get_transformed_node()->begin_transform_update();
+        tr->translation_x = (float)((double)tr->translation_x - dx);
+        tr->translation_y = (float)((double)tr->translation_y - dy);
+        v->get_transformed_node()->end_transform_update();
+    }
+
+    // The veil's bright cell is a different cell now. Retarget it through the normal path so it
+    // cross-fades on the existing ~120 ms clock (-1 = "no drop target", which that function maps
+    // to the current workspace) — otherwise the cell the camera is about to zoom INTO would be
+    // the one still painted dim.
+    auto cws = output->wset()->get_current_workspace();
+    current_ws_index = -1;
+    for (size_t i = 0; i < current_layout.clusters.size(); i++)
+    {
+        if ((current_layout.clusters[i].ws.x == cws.x) &&
+            (current_layout.clusters[i].ws.y == cws.y))
+        {
+            current_ws_index = (int)i;
+            break;
+        }
+    }
+
+    set_drop_highlight(-1);
+    LOGI("spread-overview: viewport handed off to ws (", dest.x, ",", dest.y,
+        ") before the zoom; ", before.size(), " thumbnails re-expressed");
 }
 
 // 002 (I3): the thumbnail's live on-screen rect — where it is DRAWN right now, which is its
