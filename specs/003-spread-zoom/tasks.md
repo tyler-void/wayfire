@@ -45,13 +45,13 @@ fades.
 
 **Independent test**: `meson test -C build "Spread overview layout test"` plus the full suite.
 
-- [ ] T012 In `plugins/spread-overview/src/layout.hpp`, add `struct camera_t { rectf pivot; dimf output; double t = 0.0; };` beside the existing plain types, plus declarations for `camera_apply(const camera_t&, pointf)` and `camera_scale(const camera_t&)` (contract §1). Zero Wayfire dependencies; no change to `layout()`'s signature
-- [ ] T013 In `plugins/spread-overview/src/layout.cpp`, implement the camera exactly as contract §2: `s = max(output.w/max(1,pivot.w), output.h/max(1,pivot.h))`, `k = 1 + (s−1)·t`, `A = C + (Oc−C)·t`, `camera_apply = (p−C)·k + A`, with `t` clamped to `[0,1]`. **Anchor on `lerp(C, Oc, t)`, never on `Oc`** — the latter is a translation at `t = 0` rather than the identity, which is the classic zoom bug
-- [ ] T014 Add the camera tests to `test/plugins/spread-overview-layout.cpp`: **#C1 exact identity at `t = 0`** (equality, not epsilon) over points inside, on the edge of, and far outside the pivot
-- [ ] T015 [P] Add **#C2** (cover at `t = 1`): the pivot centre maps to the output centre and the mapped pivot covers the output, for every cell of a 3×3 on 3440×1440 **and** a 4×2 on 1920×1080 — the non-square case the uniform "cover" scale exists for
-- [ ] T016 [P] Add **#C3** (one scale both axes: a unit square keeps its aspect at `t ∈ {0, .25, .5, .75, 1}`) and **#C4** (`pivot == output` ⇒ identity at every `t`, the 1×1-grid no-op)
-- [ ] T017 [P] Add **#C5** (monotonic over 101 `t` steps), **#C7** (`t = −1` and `t = 2` clamp), and the randomised property pass (fixed seed, grids 1×1…4×4, every cell as pivot, asserting #C1/#C3/#C5/#C7 and finiteness — no NaN/Inf)
-- [ ] T018 Run `meson test -C build "Spread overview layout test"` and the **full** `meson test -C build`; confirm 002's golden parity still passes untouched (the camera must not touch `layout()`). **No install, no tty2** — this increment cannot affect the desktop
+- [X] T012 In `plugins/spread-overview/src/layout.hpp`, add `struct camera_t { rectf pivot; dimf output; double t = 0.0; };` beside the existing plain types, plus declarations for `camera_apply(const camera_t&, pointf)` and `camera_scale(const camera_t&)` (contract §1). Zero Wayfire dependencies; no change to `layout()`'s signature
+- [X] T013 In `plugins/spread-overview/src/layout.cpp`, implement the camera exactly as contract §2: `s = max(output.w/max(1,pivot.w), output.h/max(1,pivot.h))`, `k = 1 + (s−1)·t`, `A = C + (Oc−C)·t`, `camera_apply = (p−C)·k + A`, with `t` clamped to `[0,1]`. **Anchor on `lerp(C, Oc, t)`, never on `Oc`** — the latter is a translation at `t = 0` rather than the identity, which is the classic zoom bug
+- [X] T014 Add the camera tests to `test/plugins/spread-overview-layout.cpp`: **#C1 exact identity at `t = 0`** (equality, not epsilon) over points inside, on the edge of, and far outside the pivot
+- [X] T015 [P] Add **#C2** (cover at `t = 1`): the pivot centre maps to the output centre and the mapped pivot covers the output, for every cell of a 3×3 on 3440×1440 **and** a 4×2 on 1920×1080 — the non-square case the uniform "cover" scale exists for
+- [X] T016 [P] Add **#C3** (one scale both axes: a unit square keeps its aspect at `t ∈ {0, .25, .5, .75, 1}`) and **#C4** (`pivot == output` ⇒ identity at every `t`, the 1×1-grid no-op)
+- [X] T017 [P] Add **#C5** (monotonic over 101 `t` steps), **#C7** (`t = −1` and `t = 2` clamp), and the randomised property pass (fixed seed, grids 1×1…4×4, every cell as pivot, asserting #C1/#C3/#C5/#C7 and finiteness — no NaN/Inf)
+- [X] T018 Run `meson test -C build "Spread overview layout test"` and the **full** `meson test -C build`; confirm 002's golden parity still passes untouched (the camera must not touch `layout()`). **No install, no tty2** — this increment cannot affect the desktop
 
 ---
 

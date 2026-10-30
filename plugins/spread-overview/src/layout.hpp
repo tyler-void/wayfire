@@ -56,6 +56,37 @@ struct layout_result
 layout_result layout(const std::vector<layout_input_view>& views,
     ivec2 grid, dimf output_size, const layout_options& opts);
 
+// ---------------------------------------------------------------------------------
+// 003: the overview CAMERA — pure, and a sibling of layout() rather than part of it
+// (layout()'s input and output are unchanged). Contract:
+// specs/003-spread-zoom/contracts/camera.md, invariants #C1-#C7.
+//
+// It maps an overview-space point to the screen as the view zooms between "the whole
+// workspace grid is visible" (t = 0) and "the pivot cell fills the screen" (t = 1):
+//
+//   s = max(output.w / pivot.w, output.h / pivot.h)   // uniform "cover" scale
+//   k = lerp(1, s, t)                                 // one scalar for BOTH axes
+//   A = lerp(centre(pivot), centre(output), t)        // the anchor
+//   camera_apply(p) = (p - centre(pivot)) * k + A
+//
+// Anchoring on lerp(centre(pivot), centre(output), t) rather than on centre(output) is
+// what makes t = 0 the identity; the latter is a TRANSLATION at t = 0, which would make
+// the overview jump the moment an animation armed.
+// ---------------------------------------------------------------------------------
+struct camera_t
+{
+    rectf pivot;      // the cell the camera converges on / departs from (output-local)
+    dimf  output;     // logical output size; the output rect is (0, 0, output.w, output.h)
+    double t = 0.0;   // 0 = whole grid visible, 1 = pivot fills the output. Clamped on use.
+};
+
+// The scale the camera applies at cam.t — a single scalar, so aspect ratios are preserved
+// (#C3). Exactly 1.0 at t = 0 and for a 1x1 grid (#C1, #C4).
+double camera_scale(const camera_t& cam);
+
+// Map an overview-space point to the screen. At t = 0 this returns `p` bit-exactly (#C1).
+pointf camera_apply(const camera_t& cam, pointf p);
+
 // Inverse of the cluster regions produced by layout(); shares the same geometry.
 // Returns the workspace whose cluster region contains (px,py), or nullopt if the
 // point is in a gap / margin / outside all clusters (caller treats as snap-back).

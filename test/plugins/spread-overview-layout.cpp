@@ -9,6 +9,7 @@
 
 #include <map>
 #include <random>
+#include <cmath>
 
 using namespace wf::spread;
 
@@ -750,4 +751,218 @@ TEST_CASE("randomized properties: overlap, bounds, cap, positivity, spatial orde
 
     MESSAGE("randomized clusters checked: " << clusters_checked);
     CHECK(clusters_checked >= 2000);
+}
+
+// =================================================================================
+// 003-spread-zoom: the camera (contract: specs/003-spread-zoom/contracts/camera.md)
+// =================================================================================
+
+static camera_t cam_of(rectf pivot, dimf output, double t)
+{
+    camera_t c;
+    c.pivot  = pivot;
+    c.output = output;
+    c.t = t;
+    return c;
+}
+
+// The cells of a grid, from the SAME function layout() uses, so a pivot in these tests is a
+// pivot the plugin can actually produce.
+static std::vector<rectf> grid_cells(ivec2 grid, dimf out, double gap = 0.0, double margin = 0.0)
+{
+    layout_options o;
+    o.cluster_gap  = gap;
+    o.outer_margin = margin;
+    std::vector<rectf> cells;
+    for (int cy = 0; cy < grid.y; cy++)
+    {
+        for (int cx = 0; cx < grid.x; cx++)
+        {
+            cells.push_back(cluster_region(ivec2{cx, cy}, grid, out, o));
+        }
+    }
+
+    return cells;
+}
+
+TEST_CASE("camera #C1: t = 0 is EXACTLY the identity")
+{
+    const dimf out{3440, 1440};
+    const std::vector<pointf> probes = {
+        {0, 0}, {1720, 720}, {3440, 1440}, {-5000, -5000}, {99999, 0.5},
+        {0.1, 0.2}, {1146.666666667, 480.3333333},
+    };
+
+    for (const auto& cell : grid_cells({3, 3}, out))
+    {
+        auto cam = cam_of(cell, out, 0.0);
+        CHECK(camera_scale(cam) == 1.0); // exactly, not approximately
+        for (const auto& p : probes)
+        {
+            auto q = camera_apply(cam, p);
+            // Bit-exact: the implementation must short-circuit rather than compute
+            // (p - C) * 1 + C, which does not always reproduce p.
+            CHECK(q.x == p.x);
+            CHECK(q.y == p.y);
+        }
+    }
+}
+
+TEST_CASE("camera #C2: at t = 1 the pivot covers the output and its centre lands centred")
+{
+    struct setup { ivec2 grid; dimf out; };
+    for (auto s : {setup{{3, 3}, {3440, 1440}}, setup{{4, 2}, {1920, 1080}}})
+    {
+        auto cells = grid_cells(s.grid, s.out);
+        for (size_t i = 0; i < cells.size(); i++)
+        {
+            const auto& cell = cells[i];
+            auto cam = cam_of(cell, s.out, 1.0);
+            INFO("grid " << s.grid.x << "x" << s.grid.y << " cell " << i);
+
+            // the pivot's centre maps to the output's centre
+            pointf c{cell.x + cell.w / 2.0, cell.y + cell.h / 2.0};
+            auto mapped = camera_apply(cam, c);
+            CHECK(mapped.x == doctest::Approx(s.out.w / 2.0));
+            CHECK(mapped.y == doctest::Approx(s.out.h / 2.0));
+
+            // and the mapped cell COVERS the output (never letterboxed)
+            const double k = camera_scale(cam);
+            CHECK(cell.w * k >= s.out.w - 1e-9);
+            CHECK(cell.h * k >= s.out.h - 1e-9);
+        }
+    }
+}
+
+TEST_CASE("camera #C3: one scale for both axes, so aspect ratio is preserved")
+{
+    const dimf out{3440, 1440};
+    auto cell = grid_cells({3, 3}, out)[4]; // the middle cell
+    for (double t : {0.0, 0.25, 0.5, 0.75, 1.0})
+    {
+        auto cam = cam_of(cell, out, t);
+        // map a unit square and check both sides scaled by the same factor
+        auto a = camera_apply(cam, pointf{100.0, 200.0});
+        auto b = camera_apply(cam, pointf{101.0, 201.0});
+        const double k = camera_scale(cam);
+        INFO("t=" << t);
+        CHECK((b.x - a.x) == doctest::Approx(k));
+        CHECK((b.y - a.y) == doctest::Approx(k));
+    }
+}
+
+TEST_CASE("camera #C4: a 1x1 grid is the identity at every t")
+{
+    const dimf out{3440, 1440};
+    auto cell = grid_cells({1, 1}, out)[0]; // == the whole output
+    for (double t : {0.0, 0.25, 0.5, 0.75, 1.0})
+    {
+        auto cam = cam_of(cell, out, t);
+        INFO("t=" << t);
+        CHECK(camera_scale(cam) == doctest::Approx(1.0));
+        auto q = camera_apply(cam, pointf{123.0, 456.0});
+        CHECK(q.x == doctest::Approx(123.0));
+        CHECK(q.y == doctest::Approx(456.0));
+    }
+}
+
+TEST_CASE("camera #C5: monotonic — a point never folds back toward the anchor")
+{
+    const dimf out{3440, 1440};
+    auto cell = grid_cells({3, 3}, out)[0];
+    const pointf p{3000.0, 1300.0}; // far outside the pivot
+
+    double prev = -1.0;
+    for (int i = 0; i <= 100; i++)
+    {
+        const double t = i / 100.0;
+        auto cam = cam_of(cell, out, t);
+        auto q = camera_apply(cam, p);
+        const double ax = (cell.x + cell.w / 2.0) +
+            (out.w / 2.0 - (cell.x + cell.w / 2.0)) * t;
+        const double ay = (cell.y + cell.h / 2.0) +
+            (out.h / 2.0 - (cell.y + cell.h / 2.0)) * t;
+        const double d = std::hypot(q.x - ax, q.y - ay);
+        INFO("t=" << t);
+        CHECK(d >= prev - 1e-9);
+        prev = d;
+    }
+}
+
+TEST_CASE("camera #C7: t outside [0,1] is clamped, never extrapolated")
+{
+    const dimf out{3440, 1440};
+    auto cell = grid_cells({3, 3}, out)[2];
+
+    auto below = cam_of(cell, out, -1.0);
+    auto zero  = cam_of(cell, out, 0.0);
+    CHECK(camera_scale(below) == camera_scale(zero));
+    CHECK(camera_apply(below, pointf{10, 20}).x == camera_apply(zero, pointf{10, 20}).x);
+
+    auto above = cam_of(cell, out, 2.0);
+    auto one   = cam_of(cell, out, 1.0);
+    CHECK(camera_scale(above) == doctest::Approx(camera_scale(one)));
+    CHECK(camera_apply(above, pointf{10, 20}).x ==
+        doctest::Approx(camera_apply(one, pointf{10, 20}).x));
+}
+
+TEST_CASE("camera: randomized properties over many grids, outputs and pivots")
+{
+    std::mt19937 rng{2003};
+    const std::vector<dimf> outputs = {{3440, 1440}, {1920, 1080}, {2560, 1600}, {800, 600}};
+    int checked = 0;
+
+    for (int trial = 0; trial < 400; trial++)
+    {
+        ivec2 grid{1 + (int)(rng() % 4), 1 + (int)(rng() % 4)};
+        dimf out = outputs[rng() % outputs.size()];
+        const double gap = (rng() % 2) ? 40.0 : 0.0;
+        auto cells = grid_cells(grid, out, gap);
+        const auto& cell = cells[rng() % cells.size()];
+
+        std::uniform_real_distribution<double> pd{-5000.0, 9000.0};
+        const pointf p{pd(rng), pd(rng)};
+
+        // #C1 exact identity
+        auto q0 = camera_apply(cam_of(cell, out, 0.0), p);
+        CHECK(q0.x == p.x);
+        CHECK(q0.y == p.y);
+
+        // #C7 clamping
+        CHECK(camera_apply(cam_of(cell, out, -3.0), p).x == p.x);
+
+        double prev_k = -1.0, prev_d = -1.0;
+        for (int i = 0; i <= 10; i++)
+        {
+            const double t = i / 10.0;
+            auto cam = cam_of(cell, out, t);
+            const double k = camera_scale(cam);
+            auto q = camera_apply(cam, p);
+
+            // finite, never NaN/Inf
+            CHECK(std::isfinite(k));
+            CHECK(std::isfinite(q.x));
+            CHECK(std::isfinite(q.y));
+            CHECK(k >= 1.0 - 1e-9);          // never shrinks
+            CHECK(k >= prev_k - 1e-9);        // #C5 scale is monotonic in t
+            prev_k = k;
+
+            // #C3 both axes share the scale
+            auto q2 = camera_apply(cam, pointf{p.x + 1.0, p.y + 1.0});
+            CHECK((q2.x - q.x) == doctest::Approx(k));
+            CHECK((q2.y - q.y) == doctest::Approx(k));
+
+            const double ax = (cell.x + cell.w / 2.0) +
+                (out.w / 2.0 - (cell.x + cell.w / 2.0)) * t;
+            const double ay = (cell.y + cell.h / 2.0) +
+                (out.h / 2.0 - (cell.y + cell.h / 2.0)) * t;
+            const double d = std::hypot(q.x - ax, q.y - ay);
+            CHECK(d >= prev_d - 1e-6);        // #C5 distance from the anchor
+            prev_d = d;
+            checked++;
+        }
+    }
+
+    MESSAGE("camera property checks: " << checked);
+    CHECK(checked >= 4000);
 }

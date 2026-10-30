@@ -436,6 +436,50 @@ layout_result layout(const std::vector<layout_input_view>& views,
     return res;
 }
 
+/* ------------------------------- 003 camera ------------------------------- */
+namespace
+{
+inline double clamp01(double v)
+{
+    return std::min(1.0, std::max(0.0, v));
+}
+}
+
+double camera_scale(const camera_t& cam)
+{
+    const double t = clamp01(cam.t);
+    if (t <= 0.0)
+    {
+        return 1.0; // #C1 / #C7: exactly 1, no arithmetic to round
+    }
+
+    // "Cover": the pivot cell at least fills the output, so nothing is letterboxed. One
+    // scalar for both axes keeps window aspect ratios intact even on a non-square grid,
+    // where the overflow simply runs past the screen edges.
+    const double s = std::max(cam.output.w / std::max(1.0, cam.pivot.w),
+        cam.output.h / std::max(1.0, cam.pivot.h));
+    return 1.0 + (s - 1.0) * t;
+}
+
+pointf camera_apply(const camera_t& cam, pointf p)
+{
+    const double t = clamp01(cam.t);
+    if (t <= 0.0)
+    {
+        // #C1 — the identity is returned EXACTLY, by construction rather than by luck of
+        // floating point: (p - C) + C is not guaranteed to reproduce p bit-for-bit.
+        return p;
+    }
+
+    const double k  = camera_scale(cam);
+    const double cx = cam.pivot.x + cam.pivot.w / 2.0;
+    const double cy = cam.pivot.y + cam.pivot.h / 2.0;
+    const double ax = cx + (cam.output.w / 2.0 - cx) * t;
+    const double ay = cy + (cam.output.h / 2.0 - cy) * t;
+
+    return pointf{(p.x - cx) * k + ax, (p.y - cy) * k + ay};
+}
+
 std::optional<ivec2> hit_test_cluster(const layout_result& r, double px, double py)
 {
     for (auto& c : r.clusters)

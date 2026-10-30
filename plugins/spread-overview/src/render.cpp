@@ -569,6 +569,9 @@ void spread_overview_t::ensure_anim_hook()
 
 // 002 (FR-011): point the highlight at a cluster and cross-fade to it. The node keeps the
 // outgoing cell so both are drawn during the ramp; progress is written by animate_step.
+// `cluster_index` is the DRAG TARGET: a cluster index while dragging over one, or -1 for
+// "no drop target". It is NOT the veil's idle cell -- the veil's bright cell is derived here
+// (-1 maps it to the current workspace), so callers must never pass current_ws_index.
 void spread_overview_t::set_drop_highlight(int cluster_index)
 {
     if (!highlight_node)

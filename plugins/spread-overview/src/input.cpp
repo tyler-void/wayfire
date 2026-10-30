@@ -289,10 +289,11 @@ void spread_overview_t::handle_pointer_motion(wf::pointf_t position, uint32_t ti
 
 void spread_overview_t::end_drag(wf::pointf_t release_local)
 {
-    // Fade the drop-target highlight out and restore the idle focus cue (current workspace
-    // bright). On a real relocate reflow() rebuilds the veil anyway; on a snap-back this is
-    // what un-brightens the drop target. Both move on one clock since 003 I0.
-    set_drop_highlight(current_ws_index);
+    // -1 = "no drop target": fades the highlight out AND returns the veil's bright cell to
+    // the current workspace, since set_drop_highlight derives the veil's idle cell itself.
+    // Passing current_ws_index here instead would light the thick HIGHLIGHT border around the
+    // current workspace and cross-fade it away -- a visible artefact after every drop.
+    set_drop_highlight(-1);
 
     // Principle VI: the view vanished mid-drag -> nothing to move or snap back.
     if (!press_view || !press_view->is_mapped() || !thumbnails.count(press_view))
