@@ -1,7 +1,7 @@
 <!--
 SYNC IMPACT REPORT
 ==================
-Version change: 1.0.0 → 1.1.0 → 1.1.1 → 1.2.0 → 1.3.0
+Version change: 1.0.0 → 1.1.0 → 1.1.1 → 1.2.0 → 1.3.0 → 1.4.0
 Rationale: 1.1.0 MINOR — two principles added (VII, VIII) and Principle IV materially expanded to
 encode the three recon-surfaced constraints as first-class, inheritable rules. 1.1.1 PATCH —
 corrected the wlroots/wf-config dependency wording (they are meson **subprojects** selected via
@@ -17,13 +17,21 @@ windows actually sit (ADR-004 supersedes 001 layout invariant #10, which fixed o
 workspace). Principle VIII and Technology Constraints are brought up to date with the facts of this
 tree after the 2026-09-29 upstream sync (0.11-dev → 0.12-dev, ABI 2026'07'09 → 2026'08'01, wlroots
 0.20.1 → 0.20.2, wf-config 0.11.0 → 0.12.0); no obligation in VIII changes, only the stated facts.
+1.4.0 MINOR (2026-10-29, feature 004-inactive-alpha) — **scope widened from one plugin to this
+fork's in-tree plugins.** Two edits, both found by 004's Constitution Check: (a) the governing
+sentence named only `spread-overview`, so a second in-tree plugin was not covered by any principle;
+it now governs every in-tree plugin of this fork, with spread-overview as the worked example and
+"the plugin" in each principle meaning the one under development. (b) Principle V required
+coexistence with the user's `inactive-alpha` **pywayfire daemon** — the component 004 replaces with
+a native plugin. The obligation is unchanged and still load-bearing; only its referent moves, and
+the daemon is recorded as superseded. No principle is removed or weakened.
 
 Principles (8):
   I.    Pure, Testable Layout Core                                           [EXPANDED in 1.3.0]
   II.   Thin API-Contact Wrappers
   III.  Incremental, Independently-Verifiable Build-Up
   IV.   Verify-Before-Build — Master Source Is the Sole Signature Authority   [EXPANDED in 1.1.0]
-  V.    Non-Regression & Coexistence
+  V.    Non-Regression & Coexistence                                 [AMENDED in 1.4.0]
   VI.   View-Lifetime Safety
   VII.  Architecture Decisions Are Recorded (ADR Discipline)                  [NEW in 1.1.0]
   VIII. Locked Build Target & Preserved Fallback                             [NEW in 1.1.0]
@@ -48,9 +56,15 @@ Deferred / TODO: none.
 
 # Spread Overview Constitution
 
-Governs the `spread-overview` Wayfire plugin: an all-workspace window overview that spreads
-every window (unoverlapped, including maximized) and relocates a window to another workspace
-when the user drags and drops its thumbnail onto that workspace's region.
+Governs the **in-tree Wayfire plugins of this fork** — every plugin developed under
+`plugins/<name>/` in this checkout. Where a principle says "the plugin", it means the plugin
+currently under development.
+
+The worked example throughout is `spread-overview`: an all-workspace window overview that spreads
+every window (unoverlapped, including maximized) and relocates a window to another workspace when
+the user drags and drops its thumbnail onto that workspace's region. Also governed:
+`inactive-alpha` (native inactive-window dimming, feature 004). Widened in 1.4.0 — before that this
+document named only the first plugin, which left any second one ungoverned.
 
 ## Core Principles
 
@@ -112,7 +126,12 @@ against — produces code that compiles against imagination and fails against re
 ### V. Non-Regression & Coexistence
 
 The plugin MUST NOT alter or break the behavior of any existing plugin, and MUST coexist with the
-user's `inactive-alpha` pywayfire daemon. It MUST capture each affected view's pre-session state
+user's inactive-window dimming — since 1.4.0 the in-tree **`inactive-alpha` plugin** (feature 004),
+which supersedes the `inactive-alpha` pywayfire daemon that previously held this role. Concretely:
+window opacity lives in the `"alpha"`-named `view_2d_transformer_t`, written by several components
+(the stock `alpha` plugin, its IPC method, and the dimming plugin), so a plugin that changes a
+view's opacity MUST capture and restore the prior value rather than assume it owns it.
+It MUST capture each affected view's pre-session state
 (alpha, transform, geometry, z-order) at activation and restore it exactly at deactivation —
 including for a view that was relocated during the session. Forced deactivation (`cancel`) MUST
 also fully restore state.
@@ -224,4 +243,4 @@ lists, and reviews MUST verify compliance with the principles above.
   checkpoint. Complexity that violates a principle MUST be justified against a concrete need or
   removed.
 
-**Version**: 1.3.0 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-09-29
+**Version**: 1.4.0 | **Ratified**: 2026-07-11 | **Last Amended**: 2026-10-29

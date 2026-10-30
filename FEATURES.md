@@ -46,6 +46,26 @@ A refinement pass on the overview, on top of the shipped feature.
   [ADR-004](docs/adr/004-per-window-cluster-scale.md) ·
   [the oracle](specs/002-spread-refine/reference/layout_ref.py)
 
+### 🔅 inactive-alpha · _complete_
+
+Dims every window except the focused one, natively — replacing an IPC helper script with an
+in-tree plugin (no Python process, no socket, no autostart entry).
+
+- **Code:** [`plugins/inactive-alpha/`](plugins/inactive-alpha/) ·
+  **Docs:** [README](plugins/inactive-alpha/README.md) ·
+  [spec & contracts](specs/004-inactive-alpha/)
+- **The point of the rewrite:** the script decided when to stand aside by *plugin name*, so adding
+  a second overview plugin silently reintroduced the bug it was written to avoid — the focused
+  window appeared dimmed inside the overview until its name was added to a hardcoded list. The
+  plugin asks the compositor whether **any** plugin holds the output instead, which needs no
+  maintenance for plugins that do not exist yet.
+- **Highlights:** pure, unit-tested decision core (~10 lines, 1250 assertions); writes the same
+  per-window opacity the stock `alpha` plugin uses, so nothing can disagree about a window's
+  opacity; restores exactly the windows it dimmed on unload; retains the last focused window when
+  keyboard focus moves to a panel, so clicking a bar does not dim everything.
+- **Status:** complete — verified on a throwaway session, including that short plugin activations
+  (workspace-switch animations) cause no visible flicker.
+
 ## Optimizations
 
 _None yet — this section will track performance / behavior tweaks to upstream code._

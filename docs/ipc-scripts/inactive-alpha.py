@@ -1,4 +1,18 @@
 #!/usr/bin/python3
+#
+# SUPERSEDED 2026-10-30 by the in-tree `inactive-alpha` plugin (feature 004,
+# plugins/inactive-alpha/). Kept as reference, no longer autostarted from wayfire.ini.
+#
+# Why it was replaced: this script decides when to stand aside by PLUGIN NAME
+# (OVERVIEW_PLUGINS below). Adding a second overview plugin therefore silently
+# reintroduced the bug it was meant to avoid — the focused window showed up dimmed
+# inside spread-overview until its name was added to the set. The native plugin asks
+# the compositor whether ANY plugin holds the output instead, which needs no
+# maintenance for plugins that do not exist yet.
+#
+# To fall back: uncomment the blur_on_inactive line in ~/.config/wayfire.ini
+# [autostart] and remove `inactive-alpha` from [core] plugins.
+#
 """Dim inactive toplevels, nhưng nhường quyền cho các plugin overview khi chúng mở."""
 import sys
 from wayfire import WayfireSocket

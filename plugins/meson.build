@@ -67,6 +67,7 @@ plugins = [
   'wm-actions',
   'scale',
   'spread-overview',
+  'inactive-alpha',
   'single_plugins',
   'ipc-rules',
 ]

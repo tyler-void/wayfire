@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<wayfire>
+	<plugin name="inactive-alpha">
+		<_short>Inactive Window Dimming</_short>
+		<_long>Render every window except the focused one slightly transparent, so the window holding the keyboard is obvious at a glance. Dimming pauses automatically while any plugin takes over the screen (the window overview, scale, expo), so all windows are fully visible there.</_long>
+		<category>Effects</category>
+		<option name="dim_alpha" type="double">
+			<_short>Inactive window opacity</_short>
+			<_long>Opacity of windows that do not have keyboard focus. 1.0 disables dimming; lower is more transparent. Applies to already-open windows as soon as it is changed. Note that this writes the same per-window opacity the Alpha plugin sets by hand, so the last one to write wins — a manual value is replaced on the next focus change.</_long>
+			<default>0.85</default>
+			<min>0.0</min>
+			<max>1.0</max>
+			<precision>0.01</precision>
+		</option>
+	</plugin>
+</wayfire>
