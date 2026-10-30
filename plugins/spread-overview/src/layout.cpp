@@ -339,7 +339,12 @@ bool pack_with_spacing(const rectf& region, ivec2 ws,
             const double s_v = scale * emphasis(v, beta, out_h) * r.add;
             const double cw  = pw(v) * s_v;
             const double ch  = ph(v) * s_v;
-            const double s_c = std::min(s_v, o.max_scale); // invariant #5: never upscale past the cap
+            // Invariant #5: never upscale past the cap. 003 (T032): this constrains layout()
+            // ONLY. The camera deliberately drives thumbnails far ABOVE max_scale as a cell
+            // grows to fill the screen — that is the zoom — and it does so in the plugin's
+            // transformer, downstream of here. Do not "fix" the animation to respect this cap:
+            // the two are different things, a resting slot versus a frame of motion.
+            const double s_c = std::min(s_v, o.max_scale);
             const double tw  = pw(v) * s_c;
             const double th  = ph(v) * s_c;
             const double tx  = x + (cw - tw) / 2.0;

@@ -447,6 +447,12 @@ void spread_overview_t::clear_spread()
     saved_alpha.clear();
     session_views.clear();
     hit_order.clear();
+    // 003 (T033): this map was the one per-view container clear_spread did not scrub, so stale
+    // observer_ptr keys outlived the session. Harmless in practice — a REFLOW is always
+    // preceded by a fresh snapshot, and a dead key is only ever compared, never dereferenced —
+    // but "every per-view map is empty when the session ends" is the property worth being able
+    // to state without a caveat (Principle VI).
+    reflow_prev_rects.clear();
     current_layout = layout_result{};
     output->render->damage_whole();
 }
@@ -1005,6 +1011,12 @@ void spread_overview_t::reflow()
 // T028: scrub a view from every per-session map and stop listening to it. Called the moment a
 // window unmaps, so the non-owning observer_ptr is gone before the view object is destroyed —
 // nothing can dereference a dead pointer afterwards.
+// 003 (T033): the camera needs no entry here, and that is by construction rather than luck.
+// It holds no per-view state at all — a pivot rect, a scalar t and a cluster INDEX — and a
+// view's role is derived from get_view_main_workspace() every time it is asked, so there is no
+// stored role that could go stale when a window dies mid-zoom. animate_step skips a view that
+// is gone before it ever asks for the role, and is_camera_driven bounds-checks the pivot index,
+// so even a workspace-grid change mid-session degrades to "nothing is camera-driven".
 void spread_overview_t::forget_view(wayfire_toplevel_view view)
 {
     session_views.erase(

@@ -82,8 +82,8 @@ fades.
 - [X] T027 [US2] In `plugins/spread-overview/src/render.cpp` + `overview.hpp`, **delete** 001's per-cluster directional slide-in: the camera subsumes it for off-workspace views (FR-015). Remove the dead branch rather than leaving it unreachable, as `finalize_entry_anim` was removed in 002
 - [X] T028 [US2] Verify FR-010 holds under the camera: because the camera is composed **into** each view's transformer, `live_thumb_rect` already reports the true on-screen rect, so press hit-testing, the drop target and the press-freeze need no change. Confirm by reading the path, and if anything bypasses the transformer, fix it rather than special-casing the camera
 - [X] T029 [P] [US2] In `plugins/spread-overview/src/input.cpp`, extend the existing `drag start` log line with the camera's `t` at press, so SC-005's 1-px check can be read from `/tmp/master-log` mid-zoom
-- [ ] T030 [US2] Build, install, run the ABI-stamp check
-- [ ] T031 [US2] 🛑 **tty2 gate** — present quickstart §I3 as a numbered plan (mirror check from three workspaces, the mid-zoom grab, a window closing during both animations) and **STOP** for the user's result
+- [X] T030 [US2] Build, install, run the ABI-stamp check
+- [X] T031 [US2] 🛑 **tty2 gate** — present quickstart §I3 as a numbered plan (mirror check from three workspaces, the mid-zoom grab, a window closing during both animations) and **STOP** for the user's result
 
 ---
 
@@ -92,8 +92,8 @@ fades.
 **Goal**: a correctness guard rather than a feature — it protects 002's guarantee under a moving
 camera. Most of it should already hold by construction (T028); this phase is where it is *proven*.
 
-- [ ] T032 [US3] Confirm `max_scale` is **not** clamped for camera-driven views: a thumbnail zooming off-screen deliberately exceeds it, because invariant #5 constrains `layout()`, not the animation (plan § Known opens 3). Add a comment at the clamp site so it is not "fixed" by mistake
-- [ ] T033 [US3] Confirm Principle VI across both animations: a view unmapping mid-zoom is skipped by `animate_step` and scrubbed by `forget_view`, and the derived role cannot go stale. Add the scrub if anything is missing
+- [X] T032 [US3] Confirm `max_scale` is **not** clamped for camera-driven views: a thumbnail zooming off-screen deliberately exceeds it, because invariant #5 constrains `layout()`, not the animation (plan § Known opens 3). Add a comment at the clamp site so it is not "fixed" by mistake
+- [X] T033 [US3] Confirm Principle VI across both animations: a view unmapping mid-zoom is skipped by `animate_step` and scrubbed by `forget_view`, and the derived role cannot go stale. Add the scrub if anything is missing
 - [ ] T034 [US3] 🛑 **tty2 gate** — the US3 scenarios: press mid-zoom grabs the thumbnail under the pointer, its drop lands on the highlighted cell, and closing a window from its application during each animation leaves no crash and no ghost. **STOP** for the user's result
 
 ---
