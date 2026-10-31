@@ -31,6 +31,58 @@ A related observation that weakens any fractional-geometry story further: a real
 live produced only integral geometry (`1720,0,1720,720` → `1720,0,1720,1440`, `tiled-edges 9 → 11`)
 on a 3440×1440 output, where slots divide evenly. Fractional view rects may not arise here at all.
 
+## Tearing hypothesis (raised 2026-10-31): ruled out in its scanout form
+
+The reporter's instinct: *"not the geometry, it's the renderer — I used to have Wayfire on HDMI
+with the 3060 before explicit sync and it tore; I think this is a tear."*
+
+**The strongest part of that argument is right, and it corrects this document's original reasoning.**
+A tear is only *visible* where two frames differ; in static screen areas it is invisible. During a
+grid move the only thing changing is the moved window, so a tear would appear as a horizontal
+discontinuity spanning exactly that window's width. "Length equals the window's width" is therefore
+evidence *for* a tear, not against it.
+
+It also invalidates the diagnostic this document originally led with. "Force a repaint; if the line
+vanishes it is under-damage" does **not** discriminate: a tear on the final frame of the animation,
+followed by no further repaints on a static desktop, leaves the torn front buffer on scanout
+indefinitely and clears the moment anything repaints. Both hypotheses predict the same result.
+Tearing also explains the intermittency more naturally — whether a flip lands mid-scan is a timing
+race, where the damage story needs a rounding coincidence that the captured integral geometries
+argue against.
+
+**But a scanout tear is impossible in this build**, verified two ways:
+
+- wlroots gates `DRM_MODE_PAGE_FLIP_ASYNC` on `conn_state->base->tearing_page_flip`
+  (`backend/drm/drm.c:1002`), a flag only the compositor can set. Wayfire never sets it:
+  `grep -rn "tearing_page_flip\|tearing_control\|set_tearing" src/ plugins/` returns nothing. Every
+  flip is vsync'd.
+- Client side, `wayland-info` on the live session lists `wp_linux_drm_syncobj_manager_v1`
+  (explicit sync, present since `a4df7649`) and **no** tearing-control interface at all, so no
+  client can request tearing either.
+
+VRR is also off — the kanshi profile sets `mode preferred` with no `adaptive_sync`.
+
+The 3060-on-HDMI experience was a genuinely different setup (different GPU, no explicit sync), so
+reasoning by analogy from it was reasonable; the conditions have since changed.
+
+**What survives of the hypothesis, and it may well be the answer**: "the renderer, not the
+geometry". The prime renderer-side candidate is the grid **crossfade** itself. It captures the
+window into an auxiliary buffer (`capture_current_contents`) and blends that snapshot against the
+live window every frame. A seam at the snapshot's edge is a compositing artifact, has nothing to do
+with view geometry, and would look exactly like this.
+
+### The bisect that settles it
+
+`grid/type` is currently at its default, `crossfade`. Set it to `none` (no animation at all) and
+use the machine normally:
+
+- **Artifact disappears** → it is the crossfade's capture-and-blend, i.e. renderer-side, inside
+  `plugins/grid/wayfire/plugins/crossfade.hpp`.
+- **Artifact persists** → it is the final commit / damage of the move itself, and the crossfade is
+  innocent.
+
+`wobbly` is a third setting worth comparing, since it animates without the snapshot blend.
+
 ## Still open
 
 - The `decoration` plugin's frame. Its damage on resize has not been examined, and a stale
