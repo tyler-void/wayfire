@@ -105,7 +105,7 @@ camera. Most of it should already hold by construction (T028); this phase is whe
 - [X] T037 [P] Update the "Affected artifacts" list in `docs/adr/005-overview-camera-zoom.md` to what was actually built, and record whether the 1×1-grid and non-square-grid paths were exercised
 - [X] T038 [P] Add the camera to `FEATURES.md` under spread-overview: what changed, the hybrid roles, and that the overlay rect conversion came with it
 - [X] T039 [P] Update `plugins/spread-overview/README.md`: the animation section becomes one camera in two directions, note that `duration`/`exit_duration` drive it and that the veil's bright cell now fades (002's deferral closed)
-- [ ] T040 Final report: files changed per increment, test output, deviations, and what remains. Merging and pushing are the user's decision — **ask before every push**
+- [X] T040 Final report: files changed per increment, test output, deviations, and what remains. Merging and pushing are the user's decision — **ask before every push**
 
 ---
 
