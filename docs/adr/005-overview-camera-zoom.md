@@ -98,14 +98,54 @@ dives too far past the screen edges.
 
 ## Affected artifacts
 
-- `plugins/spread-overview/src/layout.{hpp,cpp}` — the pure camera beside `layout()`.
+As built (T037):
+
+- `plugins/spread-overview/src/layout.{hpp,cpp}` — the pure camera beside `layout()`:
+  `camera_t`, `camera_scale`, `camera_apply`, `camera_rect`, plus the **inverse**
+  `camera_unapply` / `camera_unrect` that I3 turned out to need (R-211, contract #C8).
 - `plugins/spread-overview/src/overlay.{hpp,cpp}` — veil + grid as rects, per-cell alpha,
-  `set_camera` on every overlay node.
-- `plugins/spread-overview/src/render.cpp` — camera state, per-frame compose, entry rewrite.
-- `plugins/spread-overview/src/input.cpp` — pivot selection per dismissal route; drag damage via
-  `begin/end_transform_update`.
-- `plugins/spread-overview/src/overview.hpp` — camera session state; removal of the ENTRY path.
-- `test/plugins/spread-overview-layout.cpp` — camera invariants #C1–#C7.
-- `specs/003-spread-zoom/contracts/camera.md` — the normative definition.
+  `set_camera` on all four nodes, and the wallpaper's **output-aspect tile + full-screen
+  backdrop** (see "Deviations" below).
+- `plugins/spread-overview/src/render.cpp` — camera session state, the per-frame compose and its
+  inverse, derived roles, the entry camera, the close's viewport handoff (R-210), and the
+  deletion of 002's separate `overlay_fade` clock.
+- `plugins/spread-overview/src/input.cpp` — pivot selection per dismissal route; the clicked
+  thumbnail and clicked empty cell became **animated** closes; `camera_t` in the drag log.
+- `plugins/spread-overview/src/move.cpp` — `switch_workspace` uses `set_workspace`, not
+  `request_workspace` (R-209), so vswitch never animates against the camera.
+- `plugins/spread-overview/src/overview.hpp` — camera session state; the ENTRY **role split**
+  (see below).
+- `test/plugins/spread-overview-layout.cpp` — camera invariants #C1–#C8.
+- `specs/003-spread-zoom/contracts/camera.md` — the normative definition, plus §3b (#C8) and the
+  correction to #C1 as applied to rects.
 - `specs/002-spread-refine/tasks.md` — the FR-011 deferral is closed by I0.
-- *(Update this list to what was actually built before closing 003.)*
+
+### Deviations from the plan
+
+1. **T027 found nothing to delete.** 001's "per-cluster directional slide-in" was never separate
+   code — it was the emergent effect of starting every view at its real (off-screen) position.
+   The change is a role split, not a deletion.
+2. **The camera needed an inverse** (R-211). Composing it into each view's transformer is what
+   makes FR-010 free, but it means a *rendered* transform is not a *base* transform: the drag
+   snap-back and the reflow snapshot both read rendered values back as animation bases, and would
+   have zoomed twice. Screen space for input, base space for clocks.
+3. **The close must hand the viewport over first** (R-210), because `set_workspace` moves every
+   non-sticky view, so "settle to identity" only means "arrive on screen" once the viewport is
+   already on the destination.
+4. **The chrome's opacity became a function of the camera** (`1 - t`), replacing 002's separate
+   `overlay_fade`. One clock cannot drift out of step with the zoom, and the open gained a
+   fade-in on the right duration with no new option (FR-008).
+5. **The wallpaper is exempt from that fade and gained a backdrop.** Fading it blended a scaled
+   copy of the picture over the unscaled desktop copy for the whole zoom — a double exposure. It
+   is now opaque, its per-cell tile is the largest **output-aspect** rect centred in the cell (so
+   at `t = 1` it lands exactly on the output), and a full-screen backdrop pinned to the output —
+   deliberately *not* camera-mapped — keeps the live desktop from showing through gaps and
+   letterbox bars. This was not in the plan; it is what "seamless like expo" actually required.
+
+### Paths exercised
+
+- **Non-square grid**: covered in the pure suite (#C2 on a 4×2 at 1920×1080, and the randomised
+  pass over 1×1…4×4); the uniform "cover" scale exists for exactly this case.
+- **1×1 grid**: covered in the pure suite (#C4, identity at every `t`) and reachable live by
+  setting `vwidth`/`vheight` to 1, where the zoom correctly degrades to a plain settle/fade.
+- Live verification of both at the tty gates is recorded in `specs/003-spread-zoom/tasks.md`.

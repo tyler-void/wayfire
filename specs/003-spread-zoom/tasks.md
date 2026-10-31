@@ -100,11 +100,11 @@ camera. Most of it should already hold by construction (T028); this phase is whe
 
 ## Phase 6 — I4: regression, docs, housekeeping
 
-- [ ] T035 Run the **full** `meson test -C build` and the ABI-stamp check after a clean `ninja -C build && sudo ninja -C build install`
+- [X] T035 Run the **full** `meson test -C build` and the ABI-stamp check after a clean `ninja -C build && sudo ninja -C build install`
 - [ ] T036 🛑 **tty2 gate** — re-run all seven 001 acceptance scenarios (SC-006) plus the 20-cycle soak mixing all four dismissal routes (SC-008), and confirm FR-014: behaviour outside the overview unchanged and the `inactive-alpha` plugin still dims correctly. **STOP** for sign-off
-- [ ] T037 [P] Update the "Affected artifacts" list in `docs/adr/005-overview-camera-zoom.md` to what was actually built, and record whether the 1×1-grid and non-square-grid paths were exercised
-- [ ] T038 [P] Add the camera to `FEATURES.md` under spread-overview: what changed, the hybrid roles, and that the overlay rect conversion came with it
-- [ ] T039 [P] Update `plugins/spread-overview/README.md`: the animation section becomes one camera in two directions, note that `duration`/`exit_duration` drive it and that the veil's bright cell now fades (002's deferral closed)
+- [X] T037 [P] Update the "Affected artifacts" list in `docs/adr/005-overview-camera-zoom.md` to what was actually built, and record whether the 1×1-grid and non-square-grid paths were exercised
+- [X] T038 [P] Add the camera to `FEATURES.md` under spread-overview: what changed, the hybrid roles, and that the overlay rect conversion came with it
+- [X] T039 [P] Update `plugins/spread-overview/README.md`: the animation section becomes one camera in two directions, note that `duration`/`exit_duration` drive it and that the veil's bright cell now fades (002's deferral closed)
 - [ ] T040 Final report: files changed per increment, test output, deviations, and what remains. Merging and pushing are the user's decision — **ask before every push**
 
 ---

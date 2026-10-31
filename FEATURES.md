@@ -46,6 +46,42 @@ A refinement pass on the overview, on top of the shipped feature.
   [ADR-004](docs/adr/004-per-window-cluster-scale.md) ·
   [the oracle](specs/002-spread-refine/reference/layout_ref.py)
 
+#### 🔭 spread-zoom (003) · _one camera, two directions_
+
+The open and the close stopped being two animations and became one camera, the way expo feels.
+
+- **The camera.** A pure function beside `layout()`: it maps overview space to the screen as `t`
+  moves between *the whole grid is visible* and *the pivot cell fills the screen*. The close runs
+  `t: 0 → 1` and pivots on **where you are going** — the clicked window's workspace, the clicked
+  empty cell, or the current one for Esc. The open runs `t: 1 → 0` and pivots on where you were.
+  No new option: the existing `duration` and `exit_duration` drive it.
+- **Hybrid roles, derived per frame.** The pivot cell's windows *settle* to their real desktop
+  positions; everything else *rides the camera* out past the screen edges. The camera is
+  deliberately not applied to the settling windows — a layout slot is a *packed* position, so
+  zooming one would land a window where the packer put it rather than where it lives. This also
+  subsumes 001's directional slide-in, which was only ever the side effect of starting an
+  off-workspace window at its real, off-screen position.
+- **Two orderings that had to be right.** A close that changes workspace hands the viewport over
+  **instantly** before it zooms (`set_workspace`, never `request_workspace` — otherwise vswitch
+  slides the viewport while the cell zooms, which is what "being dragged sideways" was), and
+  re-expresses every thumbnail against its moved geometry so nothing jumps. And because the
+  camera is composed *into* each view's transformer, anything that reads a rendered transform
+  back as an animation base must divide the camera out: screen space for input, base space for
+  clocks.
+- **A seamless wallpaper hand-off.** The per-cell tile is the largest output-aspect rect centred
+  in its cell, which provably lands exactly on the output at `t = 1`, and it never fades — fading
+  it blended a scaled copy of the picture over the unscaled desktop copy, a double exposure that
+  read as a ghost. With a full-screen backdrop behind the grid, the teardown swaps identical
+  pixels.
+- **Chrome as rects.** The veil and grid stopped baking an output-sized cairo texture every frame
+  (19.8 MB per rebuild) and became solid rects, which is what made per-cell alpha animatable —
+  closing 002's deferred half of FR-011, where the veil's bright cell could only snap.
+- **Proof.** Camera invariants #C1–#C8 in the pure suite (identity at rest, cover at full zoom,
+  one scale for both axes, 1×1 degeneracy, monotonicity, clamping, round-trip), ~4.0 M assertions
+  total, with 002's golden parity untouched — the camera never touches `layout()`.
+- **Docs:** [spec & contracts](specs/003-spread-zoom/) ·
+  [ADR-005](docs/adr/005-overview-camera-zoom.md)
+
 ### 🔅 inactive-alpha · _complete_
 
 Dims every window except the focused one, natively — replacing an IPC helper script with an

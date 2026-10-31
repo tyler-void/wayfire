@@ -73,19 +73,43 @@ fail-soft — a missing/undecodable file just disables the feature. See
 
 ## Animations
 
-Entry and reflow are driven by `duration`; the close is driven by `exit_duration` (both default
-`circle` ease-out):
-- **Entry** — thumbnails converge in from each window's real position (off-workspace windows slide
-  in from their grid direction).
-- **Reflow** — after a relocate, thumbnails glide from where they were to their new slots.
-- **Exit** — the destination workspace's windows settle back to full size while every other
-  workspace's windows fade out in place, and the veil / wallpaper / grid dissolve together (rather
-  than the grid snapping away). Runs on `exit_duration`, shorter than the open by default.
+Since 003 the open and the close are **one camera in two directions**, not two animations. The
+camera pivots on a workspace cell and interpolates `t` between *the whole grid is visible*
+(`t = 0`) and *the pivot cell fills the screen* (`t = 1`). The open runs `t: 1 → 0` over
+`duration`; the close runs `t: 0 → 1` over `exit_duration` (both default `circle` ease-out).
+There is **no separate option** for the zoom.
+
+Each window takes one of two roles, derived every frame rather than stored:
+
+- **The pivot cell's windows settle** — they interpolate between their slot and their real desktop
+  position. The camera is deliberately *not* applied to them: a slot is a *packed* position, so
+  zooming it would land a window where the layout put it, blown up, instead of where it lives.
+- **Every other window rides the camera** — its slot rect is mapped through the camera, so it
+  scales away past the screen edges on the close and arrives from beyond them on the open. This
+  subsumes 001's per-cluster directional slide-in, which was only ever the side effect of starting
+  an off-workspace window at its real (off-screen) position.
+
+- **Close** — pivots on where you are going: the clicked window's workspace, the clicked empty
+  cell, or the current workspace for Esc / toggle. If that is a different workspace, the viewport
+  is handed over **instantly** first (`set_workspace`, so vswitch never slides against the
+  camera) and every thumbnail is re-expressed against its moved geometry, so nothing jumps.
+  Clicking a window or an empty cell used to tear the overview down with no animation at all;
+  both are animated now.
+- **Open** — pivots on the workspace you were on, so the overview pulls back from it.
+- **Reflow** — after a relocate, thumbnails glide from where they were to their new slots. A
+  reflow deliberately does not re-zoom.
+- **Chrome** — the veil, grid and drop highlight fade as `1 - t`, so the overview dissolves as
+  one piece on the same clock as the zoom. The **wallpaper is exempt and stays opaque**: fading it
+  blended a scaled copy of the picture over the unscaled desktop copy of the same image, which
+  read as a ghost. Instead its per-cell tile is the largest output-aspect rect centred in the
+  cell, which lands exactly on the output at `t = 1`, and a full-screen backdrop keeps the live
+  desktop from showing through the gaps. The hand-off to the real wallpaper is a swap of identical
+  pixels.
 - **Drag** — pressing a thumbnail while it is still flying in catches it exactly where it is
-  drawn; the others keep going. A cancelled drop glides back to its slot instead of jumping, and
-  the drop-target highlight cross-fades between workspaces over a fixed 120 ms. (The dim veil's
-  bright cell still switches instantly — see
-  [tasks.md § Deferred](../../specs/002-spread-refine/tasks.md).)
+  drawn, mid-zoom included; the others keep going. A cancelled drop glides back to its slot
+  instead of jumping, and the drop-target highlight cross-fades between workspaces over a fixed
+  120 ms — **as does the veil's bright cell**, which closes 002's deferral of FR-011 (it could
+  only snap while the veil was one baked texture).
 
 ## Building (in-tree)
 
