@@ -15,7 +15,8 @@ plugin of this fork, not just spread-overview; Principle V's coexistence clause 
 but read Principle V's referent as the plugin, not the daemon.
 Architecture decisions: `docs/adr/` (001–006; **006** is the first that concerns core rather
 than a plugin — it decides NOT to patch `src/` for the commit-failure busy loop, and records
-the pre-argued patch shape in case it recurs. Upstream reports live in `docs/upstream/`). Verified API surface: `docs/API-MAP-verified.md`.
+the pre-argued patch shape in case it recurs. Upstream reports live in `docs/upstream/`).
+Verified API surface: `docs/API-MAP-verified.md`.
 Upstream sync: `docs/SYNCING-UPSTREAM.md`.
 
 Key constraints: build **in-tree on Wayfire master (0.12-dev, ABI `2026'08'01`)** under
@@ -23,7 +24,9 @@ Key constraints: build **in-tree on Wayfire master (0.12-dev, ABI `2026'08'01`)*
 file inside an upstream directory; installed to `/usr/local`; keep the Arch 0.10.1 package as an
 untouched TTY fallback; C++17; the pure core carries doctests (`-Dtests=enabled`) — `layout()` must
 still match `specs/002-spread-refine/reference/layout_ref.py` within 0.5 px, and the camera must
-satisfy `contracts/camera.md` #C1–#C7.
+satisfy `contracts/camera.md` #C1–#C8 (#C8, the inverse, was added in I3 — the camera is composed
+into each view's transformer, so anything reading a rendered transform back as an animation base
+must divide it out: screen space for input, base space for clocks).
 
 Measuring render performance: `tools/render-bench/` — read its README before drawing any conclusion.
 `paint-budget` is a LEARNED estimate (ramps and decays; never compare two sequential windows — use
