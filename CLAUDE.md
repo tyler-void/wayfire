@@ -1,13 +1,24 @@
 <!-- SPECKIT START -->
-Active feature: **003-spread-zoom** (branch `003-spread-zoom`).
-Read the implementation plan first: `specs/003-spread-zoom/plan.md`
-(with `spec.md`, `design-notes.md`, `research.md` R-201…R-208, `data-model.md`,
-`contracts/camera.md` — NORMATIVE —, and `quickstart.md` for the per-increment tty2 gates).
+**No active feature.** All four are shipped and merged into `master`: **001-spread-overview**,
+**002-spread-refine**, **003-spread-zoom**, **004-inactive-alpha**. Their artifacts are
+**append-only**; 002 superseded 001 layout invariant #10, and 003 superseded only the two
+*animations* (001's directional entry, 002's fixed-size exit fade) — no layout contract changed.
 
-Shipped and merged into `master`: **001-spread-overview**, **002-spread-refine**,
-**004-inactive-alpha** (native inactive-window dimming, which retired the IPC daemon). Their
-artifacts are **append-only**; 002 superseded 001 layout invariant #10, and 003 supersedes only the
-two *animations* (001's directional entry, 002's fixed-size exit fade) — no layout contract changes.
+003 in one line: the overview's open and close are **one camera in two directions**, pivoting on
+the workspace you are going to (close) or came from (open). Read `specs/003-spread-zoom/plan.md`
+with `contracts/camera.md` (NORMATIVE, #C1–#C8) and `research.md` R-201…**R-211**. The three that
+cost the most to learn: **R-209** the viewport switch must be `set_workspace`, never
+`request_workspace`, or vswitch slides the viewport while the cell zooms; **R-210** a close that
+changes workspace must hand the viewport over *before* it zooms, because `set_workspace` moves
+every non-sticky view and "settle to identity" only means "arrive on screen" once the viewport is
+already there; **R-211** the camera is composed *into* each view's transformer, so anything that
+reads a rendered transform back as an animation base must divide it out — screen space for input,
+base space for clocks.
+
+Known issues: `docs/known-issues/` — currently one open, an intermittent leftover line after a
+`grid` move. Leading hypothesis is a buffer-age damage bug (it *blinks*, and a capture taken while
+it was visible came back clean), unconfirmed; read that file before re-investigating, since it
+records four hypotheses already ruled out with source evidence.
 
 Governance: `.specify/memory/constitution.md` — now **v1.4.0** (the scope line governs every in-tree
 plugin of this fork, not just spread-overview; Principle V's coexistence clause points at the native
