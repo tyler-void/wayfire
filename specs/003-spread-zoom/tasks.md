@@ -35,7 +35,7 @@ fades.
 - [X] T008 [P] Update `specs/002-spread-refine/tasks.md` § Deferred: record that FR-011's veil half is **closed by 003 I0**, with the reason it became cheap (the veil is no longer a baked texture). 002's other artifacts stay append-only
 - [X] T009 [P] Add to `docs/API-MAP-verified.md`: `render_pass_t::add_rect` (`render.hpp:659`) and `begin/end_transform_update` (`view-transform.hpp:270,276`), cited from this tree
 - [X] T010 Build, run `meson test -C build` (full), install, and run the ABI-stamp check from `docs/SYNCING-UPSTREAM.md` — one `plugins:` value equal to `pluginabi` (expect `20260801`)
-- [ ] T011 🛑 **tty2 gate** — present quickstart §I0 as a numbered plan (no visual change at rest; **look hard at a boundary shared by two cells and at a gap crossing with `cluster_gap = 40`**; the bright cell now fades; the drag feels no worse) and **STOP** for the user's result
+- [X] T011 🛑 **tty2 gate** — present quickstart §I0 as a numbered plan (no visual change at rest; **look hard at a boundary shared by two cells and at a gap crossing with `cluster_gap = 40`**; the bright cell now fades; the drag feels no worse) and **STOP** for the user's result
 
 ---
 
@@ -94,14 +94,14 @@ camera. Most of it should already hold by construction (T028); this phase is whe
 
 - [X] T032 [US3] Confirm `max_scale` is **not** clamped for camera-driven views: a thumbnail zooming off-screen deliberately exceeds it, because invariant #5 constrains `layout()`, not the animation (plan § Known opens 3). Add a comment at the clamp site so it is not "fixed" by mistake
 - [X] T033 [US3] Confirm Principle VI across both animations: a view unmapping mid-zoom is skipped by `animate_step` and scrubbed by `forget_view`, and the derived role cannot go stale. Add the scrub if anything is missing
-- [ ] T034 [US3] 🛑 **tty2 gate** — the US3 scenarios: press mid-zoom grabs the thumbnail under the pointer, its drop lands on the highlighted cell, and closing a window from its application during each animation leaves no crash and no ghost. **STOP** for the user's result
+- [X] T034 [US3] 🛑 **tty2 gate** — the US3 scenarios: press mid-zoom grabs the thumbnail under the pointer, its drop lands on the highlighted cell, and closing a window from its application during each animation leaves no crash and no ghost. **STOP** for the user's result
 
 ---
 
 ## Phase 6 — I4: regression, docs, housekeeping
 
 - [X] T035 Run the **full** `meson test -C build` and the ABI-stamp check after a clean `ninja -C build && sudo ninja -C build install`
-- [ ] T036 🛑 **tty2 gate** — re-run all seven 001 acceptance scenarios (SC-006) plus the 20-cycle soak mixing all four dismissal routes (SC-008), and confirm FR-014: behaviour outside the overview unchanged and the `inactive-alpha` plugin still dims correctly. **STOP** for sign-off
+- [X] T036 🛑 **tty2 gate** — re-run all seven 001 acceptance scenarios (SC-006) plus the 20-cycle soak mixing all four dismissal routes (SC-008), and confirm FR-014: behaviour outside the overview unchanged and the `inactive-alpha` plugin still dims correctly. **STOP** for sign-off
 - [X] T037 [P] Update the "Affected artifacts" list in `docs/adr/005-overview-camera-zoom.md` to what was actually built, and record whether the 1×1-grid and non-square-grid paths were exercised
 - [X] T038 [P] Add the camera to `FEATURES.md` under spread-overview: what changed, the hybrid roles, and that the overlay rect conversion came with it
 - [X] T039 [P] Update `plugins/spread-overview/README.md`: the animation section becomes one camera in two directions, note that `duration`/`exit_duration` drive it and that the veil's bright cell now fades (002's deferral closed)
