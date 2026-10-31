@@ -105,6 +105,32 @@ produces it.
 "A slice of the window as it was moving" fits: content from an intermediate animation frame,
 captured into a buffer that never got cleaned.
 
+### First discriminating measurement (2026-10-31)
+
+The reporter marked a sighting **while the artifact was visible on screen**. The capture was clean:
+the vacated half of the screen profiled as plain wallpaper with zero row anomalies, and visual
+inspection of the frame found nothing.
+
+That is a positive result, not a failed capture. `wlr_screencopy_v1.c:283,313`
+(`frame_handle_output_commit` → `src_buffer = event->state->buffer`) copies the buffer of the
+**next output commit**. So:
+
+- If the slice were stale content present in *every* slot of the swapchain, it would appear in
+  every capture. It did not, while the reporter was looking at it.
+- Therefore what is on scanout and what goes into the next committed buffer **differ** — which is
+  the definition of a per-buffer problem.
+- It also argues against "something is actively drawing the slice", since that would land in every
+  buffer and show in every capture.
+
+Caveat: one clean capture could be timing luck. It corroborates the blinking report rather than
+proving it alone.
+
+**Consequence for tooling**: a single screenshot is the wrong instrument — it samples one slot of
+four. The marker now fires a **burst of 8 captures over ~1.2 s**, which makes the next sighting
+decisive three ways: the slice visible in *some but not all* captures proves per-buffer staleness
+outright; in *all* captures means something is drawing it; in *none* means the capture path cannot
+observe it and only `-R` or an off-machine camera will.
+
 ### The experiment that settles it — built in, no instrumentation needed
 
 ```sh
