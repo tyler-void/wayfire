@@ -83,6 +83,52 @@ use the machine normally:
 
 `wobbly` is a third setting worth comparing, since it animates without the snapshot blend.
 
+## Sharper symptom (2026-10-31, second report) — and what it rules out
+
+> "The glitch sometimes has the texts of the window inside it. It looks like a slice of the window
+> that was moving before, and is now stuck and **blinking**."
+
+Two things follow immediately, and between them they eliminate both earlier leading hypotheses:
+
+- **Stale framebuffer pixels do not blink.** They are frozen until something overwrites them.
+- **A one-shot tear does not blink.** It is a single bad scanout.
+
+Something alternating between present and absent on successive frames points at **buffer age**.
+`WLR_SWAPCHAIN_CAP` is 4 and wlroots renders with per-buffer damage accumulation
+(`wlr_damage_ring_rotate_buffer`, `src/output/render-manager.cpp:369`): each frame repaints only
+the damage accumulated *for the particular buffer being reused*. If a region was drawn into one
+buffer and the later cleanup damage did not cover it for that buffer's age, the stale slice lives
+in one buffer of the rotation and not the others — so it appears and disappears as the swapchain
+rotates. **Blinking is the signature of a buffer-age damage bug**, and nothing else in this stack
+produces it.
+
+"A slice of the window as it was moving" fits: content from an intermediate animation frame,
+captured into a buffer that never got cleaned.
+
+### The experiment that settles it — built in, no instrumentation needed
+
+```sh
+/usr/local/bin/wayfire -R -d | tee /tmp/master-log-tty2     # on tty2/tty3, NOT the daily session
+```
+
+`-R` / `--damage-rerender` sets `runtime_config.no_damage_track`, which ORs the full buffer extents
+into the damage every frame (`render-manager.cpp:372`). Every buffer is always fully repainted, so
+no stale content can survive in any slot of the swapchain. Then do a few dozen grid moves:
+
+- **Cannot reproduce under `-R`** → conclusively damage tracking / buffer age. With the blinking,
+  that is a complete diagnosis.
+- **Still reproduces under `-R`** → it is not stale content at all; something is actively drawing
+  that slice on the frames where it shows. Prime suspect then is the crossfade snapshot node
+  outliving its animation (`capture_current_contents` / `crossfade_render_instance_t::render`).
+
+Expect `-R` to feel sluggish: measured paint cost already exceeds the 6.06 ms budget at 165 Hz in
+96% of frames (`tools/render-bench/`), and `-R` removes every damage optimisation on top of that.
+
+`-D` / `--damage-debug` is the complementary visual run: it paints every *undamaged* region yellow
+each frame (`render-manager.cpp:1407`), so whether the slice's area receives damage becomes
+directly visible. It cannot confirm a buffer-age bug — it forces a full-screen repaint as a side
+effect — but it is good at showing which regions get damage during the move.
+
 ## Still open
 
 - The `decoration` plugin's frame. Its damage on resize has not been examined, and a stale
