@@ -155,6 +155,39 @@ each frame (`render-manager.cpp:1407`), so whether the slice's area receives dam
 directly visible. It cannot confirm a buffer-age bug — it forces a full-screen repaint as a side
 effect — but it is good at showing which regions get damage during the move.
 
+## Outcome of the `-R` run (2026-10-31): NOT reproducible, and therefore inconclusive
+
+A session was run on tty4 with damage tracking disabled — confirmed from `/proc`:
+`/usr/local/bin/wayfire -R -d`. The artifact did not appear.
+
+**This does not confirm the buffer-age hypothesis.** The reporter could not reproduce the artifact
+*at all* that day, including on a plain session (tty2 was running `/usr/local/bin/wayfire -d`
+concurrently, with no `-R`). A negative result under `-R` only means something when the artifact is
+reproducible **without** `-R` on the same day — that plain session is the control, and without it
+the `-R` run carries no information. The hypothesis is still the leading one, on the strength of
+the blinking report and the clean-capture-while-visible measurement, but it is **unconfirmed**.
+
+### An observation worth keeping for the next attempt
+
+Every sighting so far was on the **long-running daily session** (tty1, 9+ hours of uptime, many
+windows, many workspace switches). Neither fresh test session reproduced it. That hints the
+artifact depends on accumulated session state rather than on the move itself — swapchain
+behaviour after long uptime, memory pressure, or output state churn. So:
+
+- **Try to reproduce on the daily session first**, not a fresh one. If it only ever happens there,
+  that is itself a strong clue.
+- Freshly started sessions may simply be the wrong place to look, which would explain both the
+  non-reproduction and why an afternoon of deliberate grid moves produced nothing.
+
+A build change is not the explanation: the full rebuild that day touched only `plugins/spread-overview`;
+`grid` and `src/` were untouched, and the rebuild used the same configuration.
+
+### When it comes back
+
+1. Reproduce on the **daily** session, then hit `super`+`shift`+`G` — the marker now fires a burst
+   of 8 captures over ~1.2 s, which is decisive three ways (see above).
+2. Only then run the `-R` control, having established same-day reproducibility first.
+
 ## Still open
 
 - The `decoration` plugin's frame. Its damage on resize has not been examined, and a stale
