@@ -487,9 +487,17 @@ void spread_overview_t::animate_step()
             // for the close (t 0->1) and the open (t 1->0). This replaces 002's separate
             // overlay_fade clock: one clock cannot drift out of step with the zoom, and the
             // open gets its fade-in on the right duration without a second option.
+            // The wallpaper is NOT in this list, on purpose. Fading it blended a scaled copy
+            // of the picture over the unscaled desktop copy for the whole zoom — the ghost that
+            // read as a silhouette. It stays opaque and its geometry does the work: at t = 1
+            // the pivot tile lands exactly on the full-screen backdrop, which is exactly what
+            // the desktop draws, so the teardown is a swap of identical pixels.
+            //
+            // The border DOES have to fade: at t = 1 the pivot cell's height maps exactly onto
+            // the output's, so its top and bottom boundary lines sit centred on the screen
+            // edges and would leave a half-thickness frame behind at teardown.
             const float oa = (float)(1.0 - std::clamp(camera.t, 0.0, 1.0));
             if (dim_node)       { dim_node->alpha       = oa; }
-            if (wallpaper_node) { wallpaper_node->alpha = oa; }
             if (border_node)    { border_node->alpha    = oa; }
             if (highlight_node) { highlight_node->alpha = oa; }
             output->render->damage_whole();

@@ -286,13 +286,34 @@ class wallpaper_node_t : public wf::scene::node_t
                 return;
             }
 
-            // Blit the SAME cover-cropped source into every cell. add_texture scales the
-            // texture's source box into each destination rect; the source box was set once
-            // in set_content (cells are uniform), so all cells show an undistorted crop.
+            // 003: the BACKDROP — the wallpaper at exactly the desktop's framing, pinned to
+            // the output rect and deliberately NOT camera-mapped. It is what makes the zoom
+            // clean, for two reasons:
+            //
+            //  1. The overview becomes self-contained, the way expo is. Without it, the gaps
+            //     between cells and the letterbox bars inside them showed the LIVE desktop
+            //     wallpaper at 1:1 right next to tiles showing it at k:1 — a seam at every
+            //     edge, widening as the camera zoomed.
+            //  2. It lets the wallpaper be fully OPAQUE throughout the animation. The tiles
+            //     used to ride the chrome's 1 - t fade, which meant that for the whole zoom a
+            //     scaled copy of the wallpaper was blended over the unscaled desktop copy of
+            //     the same picture: a double exposure, which is the ghost that reads as a
+            //     silhouette. Nothing fades here now; the geometry alone does the work, and at
+            //     t = 1 the pivot tile lands exactly on this backdrop, which is in turn exactly
+            //     what the desktop draws (verified: awww's `--resize` defaults to `crop`, a
+            //     centre cover-crop, the same framing set_content computes). So the teardown
+            //     swaps identical pixels for identical pixels.
+            //
+            // It must NOT be camera-mapped: it is the infinite background. Zooming it would
+            // re-introduce exactly the mismatch it exists to remove.
+            data.pass->add_texture(self->tex, data.target, self->geometry,
+                data.damage, self->alpha);
+
+            // Then one tile per cell, destination through the camera. The source box (the
+            // cover-crop) is untouched, so a tile scales without re-cropping; every tile is
+            // output-aspect, so one source box serves them all (set once in set_content).
             for (const auto& cell : self->cells)
             {
-                // Destination through the camera; the source box (the cover-crop) is
-                // untouched, so the tile scales without re-cropping.
                 const auto m = camera_rect(self->cam,
                     rectf{cell.x, cell.y, cell.width, cell.height});
                 data.pass->add_texture(self->tex, data.target,
@@ -337,7 +358,9 @@ class wallpaper_node_t : public wf::scene::node_t
         wf::scene::damage_node(this->shared_from_this(), geometry);
     }
 
-    // Overlay opacity, driven by the exit fade. 1 = opaque, 0 = fully faded out.
+    // 003: deliberately left at 1 and NEVER written by the chrome fade — see the backdrop
+    // comment in render(). Kept as a field only so the node matches its siblings; fading the
+    // wallpaper is what produced the double-exposure ghost.
     float alpha = 1.0f;
 
   private:
