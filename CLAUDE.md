@@ -13,7 +13,9 @@ Governance: `.specify/memory/constitution.md` — now **v1.4.0** (the scope line
 plugin of this fork, not just spread-overview; Principle V's coexistence clause points at the native
 `inactive-alpha` plugin). 003's plan was written against v1.3.0: its Constitution Check still holds,
 but read Principle V's referent as the plugin, not the daemon.
-Architecture decisions: `docs/adr/` (001–005). Verified API surface: `docs/API-MAP-verified.md`.
+Architecture decisions: `docs/adr/` (001–006; **006** is the first that concerns core rather
+than a plugin — it decides NOT to patch `src/` for the commit-failure busy loop, and records
+the pre-argued patch shape in case it recurs. Upstream reports live in `docs/upstream/`). Verified API surface: `docs/API-MAP-verified.md`.
 Upstream sync: `docs/SYNCING-UPSTREAM.md`.
 
 Key constraints: build **in-tree on Wayfire master (0.12-dev, ABI `2026'08'01`)** under
